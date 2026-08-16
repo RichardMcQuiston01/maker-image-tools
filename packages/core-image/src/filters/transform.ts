@@ -56,8 +56,8 @@ function sampleBilinear(
 
   const result: [number, number, number, number] = [0, 0, 0, 0];
   for (let c = 0; c < 4; c++) {
-    const top = p00[c] + (p10[c] - p00[c]) * tx;
-    const bottom = p01[c] + (p11[c] - p01[c]) * tx;
+    const top = (p00[c] ?? 0) + ((p10[c] ?? 0) - (p00[c] ?? 0)) * tx;
+    const bottom = (p01[c] ?? 0) + ((p11[c] ?? 0) - (p01[c] ?? 0)) * tx;
     result[c] = top + (bottom - top) * ty;
   }
   return result;
@@ -79,8 +79,8 @@ function sampleBilinearClamped(image: ImageData, sx: number, sy: number): [numbe
 
   const result: [number, number, number, number] = [0, 0, 0, 0];
   for (let c = 0; c < 4; c++) {
-    const top = p00[c] + (p10[c] - p00[c]) * tx;
-    const bottom = p01[c] + (p11[c] - p01[c]) * tx;
+    const top = (p00[c] ?? 0) + ((p10[c] ?? 0) - (p00[c] ?? 0)) * tx;
+    const bottom = (p01[c] ?? 0) + ((p11[c] ?? 0) - (p01[c] ?? 0)) * tx;
     result[c] = top + (bottom - top) * ty;
   }
   return result;

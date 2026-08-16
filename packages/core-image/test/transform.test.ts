@@ -165,11 +165,12 @@ describe("rotate", () => {
   });
 
   it("fills pixels outside the source with backgroundColor", () => {
-    const input = createImageData(2, 2, [0, 0, 0, 255]);
+    const input = createImageData(20, 20, [0, 0, 0, 255]);
     const output = rotate(input, { degrees: 45, backgroundColor: [1, 2, 3, 4] });
 
-    // The corners of the (larger) bounding box fall outside the rotated
-    // source square, so they should be the background color.
+    // The (0,0) corner of the bounding box is well outside the rotated
+    // source square (the square's corners only reach its diagonal radius),
+    // so every bilinear sample neighbor there is out of bounds.
     expect(getPixel(output, 0, 0)).toEqual([1, 2, 3, 4]);
   });
 
