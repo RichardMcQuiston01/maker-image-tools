@@ -1,0 +1,38 @@
+{
+  "name": "maker-image-tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Collection of image tools for editing and processing images for use in Maker and Crafting machines (Laser, CNC, Waterjet, vinyl cutter, etc.)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.1"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "bun run --workspaces --if-present build",
+    "dev": "bun run --filter=@maker/web dev",
+    "test": "bun run --workspaces --if-present test",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "typecheck": "bun run --workspaces --if-present typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4"
+  }
+}
