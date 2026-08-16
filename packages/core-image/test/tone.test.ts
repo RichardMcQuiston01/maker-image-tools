@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createImageData, setPixel } from "../src/pixel.js";
-import {
-  adjustGamma,
-  brightnessContrast,
-  curves,
-  grayscale,
-  levels,
-} from "../src/filters/tone.js";
+import { adjustGamma, brightnessContrast, curves, grayscale, levels } from "../src/filters/tone.js";
 
 function imageFromPixels(pixels: [number, number, number, number][]): ImageData {
   const image = createImageData(pixels.length, 1);

@@ -47,7 +47,8 @@ function sampleBilinear(
   const tx = sx - x0;
   const ty = sy - y0;
 
-  const inBounds = (px: number, py: number) => px >= 0 && px < image.width && py >= 0 && py < image.height;
+  const inBounds = (px: number, py: number) =>
+    px >= 0 && px < image.width && py >= 0 && py < image.height;
 
   const p00 = inBounds(x0, y0) ? getPixel(image, x0, y0) : background;
   const p10 = inBounds(x1, y0) ? getPixel(image, x1, y0) : background;
@@ -64,7 +65,11 @@ function sampleBilinear(
 }
 
 /** Bilinear-sample `image` at fractional coordinates, clamping to the edge pixel outside its bounds. */
-function sampleBilinearClamped(image: ImageData, sx: number, sy: number): [number, number, number, number] {
+function sampleBilinearClamped(
+  image: ImageData,
+  sx: number,
+  sy: number,
+): [number, number, number, number] {
   const x0 = clampInt(Math.floor(sx), 0, image.width - 1);
   const y0 = clampInt(Math.floor(sy), 0, image.height - 1);
   const x1 = clampInt(x0 + 1, 0, image.width - 1);
@@ -99,8 +104,14 @@ export const rotate: Filter<RotateOptions> = (image, options) => {
   const sin = Math.sin(radians);
 
   // Bounding box of the rotated source rectangle, big enough to contain it fully.
-  const newWidth = Math.max(1, Math.round(Math.abs(image.width * cos) + Math.abs(image.height * sin)));
-  const newHeight = Math.max(1, Math.round(Math.abs(image.width * sin) + Math.abs(image.height * cos)));
+  const newWidth = Math.max(
+    1,
+    Math.round(Math.abs(image.width * cos) + Math.abs(image.height * sin)),
+  );
+  const newHeight = Math.max(
+    1,
+    Math.round(Math.abs(image.width * sin) + Math.abs(image.height * cos)),
+  );
 
   const srcCx = image.width / 2;
   const srcCy = image.height / 2;

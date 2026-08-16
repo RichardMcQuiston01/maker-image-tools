@@ -1,14 +1,57 @@
-import { useMemo, useState } from "react";
-import { createFilterRegistry } from "@maker/core-image";
+import { useCallback, useMemo, useState } from "react";
+import { createFilterRegistry, exportImageData, registerBuiltInFilters } from "@maker/core-image";
 import { DropZone } from "./components/DropZone";
 import { CanvasPreview } from "./components/CanvasPreview";
 import { FilterPanel } from "./components/FilterPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
+import { downloadBlob } from "./lib/download";
 
 export function App() {
   const route = useHashRoute();
+  const [originalImage, setOriginalImage] = useState<ImageData | null>(null);
   const [image, setImage] = useState<ImageData | null>(null);
-  const filterRegistry = useMemo(() => createFilterRegistry(), []);
+  const [error, setError] = useState<string | null>(null);
+
+  const filterRegistry = useMemo(() => {
+    const registry = createFilterRegistry();
+    registerBuiltInFilters(registry);
+    return registry;
+  }, []);
+
+  const handleImageLoaded = useCallback((loaded: ImageData) => {
+    setOriginalImage(loaded);
+    setImage(loaded);
+    setError(null);
+  }, []);
+
+  const handleApplyFilter = useCallback(
+    (name: string) => {
+      if (!image) return;
+      try {
+        setImage(filterRegistry.apply(name, image, {}));
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Failed to apply filter "${name}"`);
+      }
+    },
+    [filterRegistry, image],
+  );
+
+  const handleReset = useCallback(() => {
+    setImage(originalImage);
+    setError(null);
+  }, [originalImage]);
+
+  const handleExport = useCallback(async () => {
+    if (!image) return;
+    try {
+      const blob = await exportImageData(image, { mimeType: "image/png" });
+      downloadBlob(blob, "maker-image-tools-export.png");
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to export image");
+    }
+  }, [image]);
 
   return (
     <div className="app">
@@ -23,9 +66,24 @@ export function App() {
       <main className="app__main">
         {route === "/editor" ? (
           <div className="editor">
-            <DropZone onImageLoaded={setImage} />
-            <CanvasPreview image={image} />
-            <FilterPanel registry={filterRegistry} disabled={!image} />
+            <DropZone onImageLoaded={handleImageLoaded} />
+            <div className="editor__preview">
+              <CanvasPreview image={image} />
+              <div className="editor__actions">
+                <button type="button" disabled={!image} onClick={handleReset}>
+                  Reset
+                </button>
+                <button type="button" disabled={!image} onClick={() => void handleExport()}>
+                  Export PNG
+                </button>
+              </div>
+              {error && (
+                <p role="alert" className="editor__error">
+                  {error}
+                </p>
+              )}
+            </div>
+            <FilterPanel onApply={handleApplyFilter} disabled={!image} />
           </div>
         ) : (
           <p>

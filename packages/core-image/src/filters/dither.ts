@@ -14,7 +14,7 @@ export interface BayerDitherOptions extends FilterOptions {
 }
 
 /** Options for blue-noise (ordered) dithering. Currently no tunable fields. */
-export interface BlueNoiseDitherOptions extends FilterOptions {}
+export type BlueNoiseDitherOptions = FilterOptions;
 
 const DEFAULT_THRESHOLD = 128;
 
@@ -55,7 +55,11 @@ function toGrayscaleBuffer(image: ImageData): Float32Array {
  * error onto not-yet-visited neighbors per `kernel`. Out-of-bounds neighbors
  * are simply skipped (their share of the error is dropped at image edges).
  */
-function diffuseErrorDither(image: ImageData, threshold: number, kernel: DiffusionTap[]): ImageData {
+function diffuseErrorDither(
+  image: ImageData,
+  threshold: number,
+  kernel: DiffusionTap[],
+): ImageData {
   const { width, height } = image;
   const gray = toGrayscaleBuffer(image);
   const output = createImageData(width, height);

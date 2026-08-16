@@ -37,7 +37,13 @@ function maskToImage(mask: Uint8Array, image: ImageData): ImageData {
   return output;
 }
 
-function sampleGray(gray: Float64Array, width: number, height: number, x: number, y: number): number {
+function sampleGray(
+  gray: Float64Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+): number {
   const cx = x < 0 ? 0 : x >= width ? width - 1 : x;
   const cy = y < 0 ? 0 : y >= height ? height - 1 : y;
   return gray[cy * width + cx] ?? 0;
@@ -96,7 +102,12 @@ function gaussianKernel1D(sigma: number): Float64Array {
 }
 
 /** Separable Gaussian blur over a grayscale buffer, clamping at the image borders. */
-function gaussianBlurGray(gray: Float64Array, width: number, height: number, sigma: number): Float64Array {
+function gaussianBlurGray(
+  gray: Float64Array,
+  width: number,
+  height: number,
+  sigma: number,
+): Float64Array {
   const kernel = gaussianKernel1D(sigma);
   const radius = (kernel.length - 1) / 2;
   const temp = new Float64Array(width * height);
@@ -292,10 +303,12 @@ export const dilate: Filter<MorphologyOptions> = (image, options) => {
 };
 
 /** Opening: erode then dilate, removing small isolated foreground specks. */
-export const morphOpen: Filter<MorphologyOptions> = (image, options) => dilate(erode(image, options), options);
+export const morphOpen: Filter<MorphologyOptions> = (image, options) =>
+  dilate(erode(image, options), options);
 
 /** Closing: dilate then erode, filling small isolated background gaps. */
-export const morphClose: Filter<MorphologyOptions> = (image, options) => erode(dilate(image, options), options);
+export const morphClose: Filter<MorphologyOptions> = (image, options) =>
+  erode(dilate(image, options), options);
 
 export interface SobelEdgeOptions extends FilterOptions {
   /**

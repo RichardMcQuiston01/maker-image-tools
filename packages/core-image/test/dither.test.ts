@@ -74,9 +74,12 @@ describe("dithering filters", () => {
       const input = createImageData(6, 6, [255, 255, 255, 255]);
       const output = filter(input, {});
       for (let i = 0; i < output.data.length; i += 4) {
-        expect([output.data[i], output.data[i + 1], output.data[i + 2], output.data[i + 3]]).toEqual([
-          255, 255, 255, 255,
-        ]);
+        expect([
+          output.data[i],
+          output.data[i + 1],
+          output.data[i + 2],
+          output.data[i + 3],
+        ]).toEqual([255, 255, 255, 255]);
       }
     });
 
@@ -84,9 +87,12 @@ describe("dithering filters", () => {
       const input = createImageData(6, 6, [0, 0, 0, 255]);
       const output = filter(input, {});
       for (let i = 0; i < output.data.length; i += 4) {
-        expect([output.data[i], output.data[i + 1], output.data[i + 2], output.data[i + 3]]).toEqual([
-          0, 0, 0, 255,
-        ]);
+        expect([
+          output.data[i],
+          output.data[i + 1],
+          output.data[i + 2],
+          output.data[i + 3],
+        ]).toEqual([0, 0, 0, 255]);
       }
     });
   });
