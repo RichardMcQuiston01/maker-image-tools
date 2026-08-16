@@ -6,17 +6,17 @@ See [`RESEARCH.md`](./RESEARCH.md) for the feature landscape survey and [`ROADMA
 
 ## Development
 
-This is a pnpm workspace monorepo:
+This is a [Bun](https://bun.sh) workspace monorepo:
 
 - `packages/core-image` — pure image/pixel processing (filters, ImageData I/O)
 - `packages/core-vector` — vector/SVG geometry primitives
 - `apps/web` — the web app (Vite + React + TypeScript)
 
 ```sh
-pnpm install
-pnpm dev          # run the web app locally
-pnpm build        # build all packages/apps
-pnpm test         # run all unit tests
-pnpm lint         # lint
-pnpm typecheck    # typecheck all packages/apps
+bun install
+bun run dev          # run the web app locally
+bun run build        # build all packages/apps
+bun run test         # run all unit tests
+bun run lint         # lint
+bun run typecheck    # typecheck all packages/apps
 ```

@@ -22,7 +22,7 @@ rather than absorbed into this repo.
    with them turned off.
 3. **One package/module per workstream.** Each track below owns its own
    files/package so independent agents can work in parallel with near-zero
-   merge conflicts. A monorepo layout (e.g. pnpm workspaces) is assumed:
+   merge conflicts. A monorepo layout (Bun workspaces) is assumed:
    `packages/core-image`, `packages/core-vector`, `packages/gcode`,
    `packages/machine-control`, `apps/web`, etc.
 4. **Only image/vector/G-code processing lives in this repo.** Accounts,
@@ -48,7 +48,7 @@ _Single agent, blocking — everything else depends on this._
 
 | Track | Deliverable                                                                                                                                            | Effort |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| 0.1   | Monorepo scaffold (pnpm workspaces or Turborepo), TypeScript config, lint/format, unit test runner, CI (build+test on PR)                              | S      |
+| 0.1   | Monorepo scaffold (Bun workspaces), TypeScript config, lint/format, unit test runner, CI (build+test on PR)                                            | S      |
 | 0.2   | `packages/core-image`: `ImageData` load/decode/export pipeline for JPG/PNG/BMP/WebP; pure-function filter interface (`(ImageData, opts) => ImageData`) | S      |
 | 0.3   | `packages/core-vector`: SVG DOM load/serialize wrapper, shared geometry types (point/path/bbox) used by every later vector track                       | S      |
 | 0.4   | `apps/web`: minimal shell — file drop zone, canvas preview, filter panel placeholder, routing                                                          | S      |

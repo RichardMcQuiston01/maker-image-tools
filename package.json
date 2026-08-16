@@ -6,17 +6,21 @@
   "description": "Collection of image tools for editing and processing images for use in Maker and Crafting machines (Laser, CNC, Waterjet, vinyl cutter, etc.)",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "bun": ">=1.1"
   },
-  "packageManager": "pnpm@10.33.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "build": "pnpm -r --if-present run build",
-    "dev": "pnpm --filter @maker/web run dev",
-    "test": "pnpm -r --if-present run test",
+    "build": "bun run --workspaces --if-present build",
+    "dev": "bun run --filter=@maker/web dev",
+    "test": "bun run --workspaces --if-present test",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "typecheck": "pnpm -r --if-present run typecheck"
+    "typecheck": "bun run --workspaces --if-present typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
