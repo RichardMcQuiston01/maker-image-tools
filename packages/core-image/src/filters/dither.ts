@@ -49,6 +49,23 @@ function toGrayscaleBuffer(image: ImageData): Float32Array {
   return gray;
 }
 
+/** Writes a pure black/white pixel into `output` at `idx`, carrying over `image`'s alpha at (x, y). */
+function writeBinaryPixel(
+  output: ImageData,
+  image: ImageData,
+  x: number,
+  y: number,
+  idx: number,
+  value: number,
+): void {
+  const [, , , a] = getPixel(image, x, y);
+  const oi = idx * 4;
+  output.data[oi] = value;
+  output.data[oi + 1] = value;
+  output.data[oi + 2] = value;
+  output.data[oi + 3] = a;
+}
+
 /**
  * Shared error-diffusion engine. Walks the grayscale buffer left-to-right,
  * top-to-bottom, quantizing each pixel to 0/255 and pushing the resulting
@@ -71,12 +88,7 @@ function diffuseErrorDither(
       const newValue = oldValue > threshold ? 255 : 0;
       const error = oldValue - newValue;
 
-      const [, , , a] = getPixel(image, x, y);
-      const oi = idx * 4;
-      output.data[oi] = newValue;
-      output.data[oi + 1] = newValue;
-      output.data[oi + 2] = newValue;
-      output.data[oi + 3] = a;
+      writeBinaryPixel(output, image, x, y, idx, newValue);
 
       for (const tap of kernel) {
         const nx = x + tap.dx;
@@ -246,12 +258,7 @@ export const ditherBayer: Filter<BayerDitherOptions> = (image, options) => {
       const threshold = thresholds[y % size]?.[x % size] ?? 0;
       const newValue = value > threshold ? 255 : 0;
 
-      const [, , , a] = getPixel(image, x, y);
-      const oi = idx * 4;
-      output.data[oi] = newValue;
-      output.data[oi + 1] = newValue;
-      output.data[oi + 2] = newValue;
-      output.data[oi + 3] = a;
+      writeBinaryPixel(output, image, x, y, idx, newValue);
     }
   }
 
@@ -279,12 +286,7 @@ export const ditherBlueNoise: Filter<BlueNoiseDitherOptions> = (image) => {
       const threshold = 255 * fractional(52.9829189 * fractional(0.06711056 * x + 0.00583715 * y));
       const newValue = value > threshold ? 255 : 0;
 
-      const [, , , a] = getPixel(image, x, y);
-      const oi = idx * 4;
-      output.data[oi] = newValue;
-      output.data[oi + 1] = newValue;
-      output.data[oi + 2] = newValue;
-      output.data[oi + 3] = a;
+      writeBinaryPixel(output, image, x, y, idx, newValue);
     }
   }
 

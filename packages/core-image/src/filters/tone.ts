@@ -9,6 +9,10 @@ function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
+function clampSigned255(value: number): number {
+  return value < -255 ? -255 : value > 255 ? 255 : value;
+}
+
 export type GrayscaleMethod = "luminance" | "average" | "lightness";
 
 export interface GrayscaleOptions extends FilterOptions {
@@ -55,7 +59,8 @@ export const levels: Filter<LevelsOptions> = (image, options) => {
   let inputWhite = options.inputWhite ?? 255;
   const outputBlack = options.outputBlack ?? 0;
   const outputWhite = options.outputWhite ?? 255;
-  const gamma = options.gamma ?? 1;
+  const rawGamma = options.gamma ?? 1;
+  const gamma = rawGamma <= 0 ? 1 : rawGamma;
 
   if (inputWhite === inputBlack) {
     inputWhite = inputBlack + 1;
@@ -150,7 +155,8 @@ export interface BrightnessContrastOptions extends FilterOptions {
 
 export const brightnessContrast: Filter<BrightnessContrastOptions> = (image, options) => {
   const brightness = options.brightness ?? 0;
-  const contrast = options.contrast ?? 0;
+  // contrast === 259 makes the formula's denominator 0; clamp to the formula's valid domain.
+  const contrast = clampSigned255(options.contrast ?? 0);
 
   // Standard brightness/contrast formula popularized for 8-bit image editors.
   const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));

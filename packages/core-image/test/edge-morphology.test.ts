@@ -167,6 +167,20 @@ describe("cannyEdgeDetect", () => {
       cannyEdgeDetect(image, { gaussianSigma: 0.8, lowThreshold: 30, highThreshold: 90 }),
     ).not.toThrow();
   });
+
+  it("thresholds on the same 0-255 magnitude scale sobelEdgeDetect uses", () => {
+    // The raw (unclamped) Sobel gradient magnitude for an 8-bit hard edge can
+    // reach ~1442, well above the documented 0-255 scale. A threshold above
+    // 255 must therefore suppress every edge, the same way it would for
+    // sobelEdgeDetect's clamped magnitude map.
+    const image = makeVerticalEdgeImage(12, 12);
+
+    const output = cannyEdgeDetect(image, { lowThreshold: 1000, highThreshold: 1000 });
+
+    for (let i = 0; i < output.data.length; i += 4) {
+      expect(output.data[i]).toBe(0);
+    }
+  });
 });
 
 describe("halftone", () => {
@@ -209,6 +223,16 @@ describe("halftone", () => {
     const output = halftone(image, {});
     expect(output.width).toBe(20);
     expect(output.height).toBe(20);
+  });
+
+  it("guards a non-positive cellSize instead of dividing by zero", () => {
+    const image = createImageData(10, 10, [128, 128, 128, 255]);
+
+    expect(() => halftone(image, { cellSize: 0 })).not.toThrow();
+    expect(() => halftone(image, { cellSize: -4 })).not.toThrow();
+    for (const px of halftone(image, { cellSize: 0 }).data) {
+      expect(Number.isFinite(px)).toBe(true);
+    }
   });
 
   it("supports the line shape", () => {

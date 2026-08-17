@@ -51,6 +51,20 @@ describe("crop", () => {
     expect(output.width).toBe(2);
     expect(output.height).toBe(2);
   });
+
+  it("never produces a zero-width/height result (the ImageData constructor throws on that)", () => {
+    const input = createImageData(4, 4);
+
+    expect(() => crop(input, { width: 0, height: 0 })).not.toThrow();
+    expect(crop(input, { width: 0, height: 0 }).width).toBeGreaterThanOrEqual(1);
+    expect(crop(input, { width: 0, height: 0 }).height).toBeGreaterThanOrEqual(1);
+
+    expect(() => crop(input, { x: 4 })).not.toThrow();
+    expect(crop(input, { x: 4 }).width).toBeGreaterThanOrEqual(1);
+
+    expect(() => crop(input, { y: 4 })).not.toThrow();
+    expect(crop(input, { y: 4 }).height).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("resize", () => {

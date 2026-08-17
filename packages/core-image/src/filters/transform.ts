@@ -17,12 +17,14 @@ export interface CropOptions extends FilterOptions {
 }
 
 export const crop: Filter<CropOptions> = (image, options) => {
-  const x = clampInt(options.x ?? 0, 0, image.width);
-  const y = clampInt(options.y ?? 0, 0, image.height);
+  // x/y leave room for at least a 1px-wide/tall result — the ImageData constructor
+  // throws IndexSizeError on a zero (or negative) width/height.
+  const x = clampInt(options.x ?? 0, 0, image.width - 1);
+  const y = clampInt(options.y ?? 0, 0, image.height - 1);
   const requestedWidth = options.width ?? image.width;
   const requestedHeight = options.height ?? image.height;
-  const width = clampInt(requestedWidth, 0, image.width - x);
-  const height = clampInt(requestedHeight, 0, image.height - y);
+  const width = clampInt(requestedWidth, 1, image.width - x);
+  const height = clampInt(requestedHeight, 1, image.height - y);
 
   const output = createImageData(width, height);
   for (let dy = 0; dy < height; dy++) {

@@ -40,6 +40,20 @@ describe("generateDpiTestGrid", () => {
     expect(getPixel(image, 17, 17)).toEqual([255, 255, 255, 255]);
     expect(getPixel(image, 8, 8)).toEqual([255, 255, 255, 255]);
   });
+
+  it("never hangs on a non-positive lineSpacingPx (clamped to 1)", () => {
+    const image = generateDpiTestGrid({ widthPx: 10, heightPx: 10, lineSpacingPx: 0 });
+
+    expect(image.width).toBe(10);
+    expect(image.height).toBe(10);
+  });
+
+  it("clamps non-positive widthPx/heightPx to a valid minimum", () => {
+    const image = generateDpiTestGrid({ widthPx: 0, heightPx: -5 });
+
+    expect(image.width).toBeGreaterThanOrEqual(1);
+    expect(image.height).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("generateMaterialTestGrid", () => {
@@ -97,5 +111,12 @@ describe("generateMaterialTestGrid", () => {
 
     expect(getPixel(image, 0, 0)).toEqual([255, 255, 255, 255]);
     expect(getPixel(image, image.width - 1, image.height - 1)).toEqual([255, 255, 255, 255]);
+  });
+
+  it("clamps a non-positive cellSizePx and negative gapPx to a valid minimum", () => {
+    const image = generateMaterialTestGrid({ speeds: [1], powers: [1], cellSizePx: 0, gapPx: -3 });
+
+    expect(image.width).toBeGreaterThanOrEqual(1);
+    expect(image.height).toBeGreaterThanOrEqual(1);
   });
 });

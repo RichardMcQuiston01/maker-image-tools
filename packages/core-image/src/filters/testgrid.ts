@@ -19,10 +19,20 @@ export interface DpiTestGridOptions {
  * with every 10th line drawn 2px wide. Meant to be engraved and physically
  * measured to determine the laser's actual achieved DPI/line spacing.
  */
+function clampInt(value: number | undefined, fallback: number, min: number): number {
+  const resolved = value ?? fallback;
+  return Math.max(min, Math.floor(resolved));
+}
+
+/** Loop increments and pixel dimensions must be >=1 (a value <=0 would spin forever/produce an invalid ImageData). */
+function positiveInt(value: number | undefined, fallback: number): number {
+  return clampInt(value, fallback, 1);
+}
+
 export function generateDpiTestGrid(options: DpiTestGridOptions = {}): ImageData {
-  const widthPx = options.widthPx ?? 400;
-  const heightPx = options.heightPx ?? 400;
-  const lineSpacingPx = options.lineSpacingPx ?? 10;
+  const widthPx = positiveInt(options.widthPx, 400);
+  const heightPx = positiveInt(options.heightPx, 400);
+  const lineSpacingPx = positiveInt(options.lineSpacingPx, 10);
 
   const image = createImageData(widthPx, heightPx, WHITE);
 
@@ -75,8 +85,9 @@ export interface MaterialTestGridOptions {
 export function generateMaterialTestGrid(options: MaterialTestGridOptions = {}): ImageData {
   const speeds = options.speeds ?? [100, 200, 300, 400, 500];
   const powers = options.powers ?? [20, 40, 60, 80, 100];
-  const cellSizePx = options.cellSizePx ?? 60;
-  const gapPx = options.gapPx ?? 4;
+  const cellSizePx = positiveInt(options.cellSizePx, 60);
+  // gapPx=0 (cells touching) is legitimate; only negative/fractional needs guarding.
+  const gapPx = clampInt(options.gapPx, 4, 0);
 
   const columns = speeds.length;
   const rows = powers.length;

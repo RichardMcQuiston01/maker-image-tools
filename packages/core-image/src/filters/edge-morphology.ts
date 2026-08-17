@@ -159,7 +159,9 @@ interface CellStats {
  * part in the darkness computation.
  */
 export const halftone: Filter<HalftoneOptions> = (image, options) => {
-  const cellSize = options.cellSize ?? 8;
+  // A cellSize <= 0 would divide-by-zero into Infinity/NaN cell indices below.
+  const rawCellSize = options.cellSize ?? 8;
+  const cellSize = rawCellSize > 0 ? rawCellSize : 8;
   const angle = options.angle ?? 0;
   const shape = options.shape ?? "circle";
   const { width, height } = image;
@@ -362,7 +364,14 @@ export const cannyEdgeDetect: Filter<CannyEdgeOptions> = (image, options) => {
 
   const gray = computeGrayscale(image);
   const blurred = gaussianBlurGray(gray, width, height, sigma);
-  const { gx, gy, magnitude } = computeSobelGradients(blurred, width, height);
+  const { gx, gy, magnitude: rawMagnitude } = computeSobelGradients(blurred, width, height);
+  // Clamp to the same 0-255 scale sobelEdgeDetect uses, so lowThreshold/highThreshold
+  // (documented as 0-255) mean the same thing here as they do there.
+  const magnitude = new Float64Array(rawMagnitude.length);
+  for (let i = 0; i < rawMagnitude.length; i++) {
+    const m = rawMagnitude[i] ?? 0;
+    magnitude[i] = m < 0 ? 0 : m > 255 ? 255 : m;
+  }
 
   const suppressed = new Float64Array(width * height);
   for (let y = 0; y < height; y++) {

@@ -64,6 +64,13 @@ describe("levels", () => {
     // and anything >= 101 clamps to outputWhite (255).
     expect(Array.from(output.data)).toEqual([0, 0, 0, 255, 255, 255, 255, 255]);
   });
+
+  it("guards a non-positive gamma instead of producing NaN", () => {
+    const image = createImageData(1, 1, [255, 128, 0, 255]);
+    const output = levels(image, { gamma: 0 });
+    expect(Array.from(output.data)).toEqual([255, 128, 0, 255]);
+    expect(Array.from(levels(image, { gamma: -2 }).data)).toEqual([255, 128, 0, 255]);
+  });
 });
 
 describe("curves", () => {
@@ -132,6 +139,18 @@ describe("brightnessContrast", () => {
     ]);
     const output = brightnessContrast(image, { contrast: -255 });
     expect(Array.from(output.data)).toEqual([128, 128, 128, 255, 128, 128, 128, 255]);
+  });
+
+  it("clamps out-of-range contrast instead of dividing by zero (259) or inverting (>259)", () => {
+    const image = createImageData(1, 1, [10, 128, 240, 255]);
+    // contrast=259 would make the formula's denominator 0 (Infinity/NaN) unclamped.
+    const atBoundary = brightnessContrast(image, { contrast: 259 });
+    const clampedTo255 = brightnessContrast(image, { contrast: 255 });
+    expect(Array.from(atBoundary.data)).toEqual(Array.from(clampedTo255.data));
+    expect(Array.from(atBoundary.data).every(Number.isFinite)).toBe(true);
+
+    const wayAboveRange = brightnessContrast(image, { contrast: 10_000 });
+    expect(Array.from(wayAboveRange.data)).toEqual(Array.from(clampedTo255.data));
   });
 });
 

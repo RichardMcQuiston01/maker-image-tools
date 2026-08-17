@@ -1,3 +1,4 @@
+import type { Filter } from "../types.js";
 import type { FilterRegistry } from "../registry.js";
 import { grayscale, levels, curves, brightnessContrast, adjustGamma } from "./tone.js";
 import {
@@ -27,37 +28,123 @@ export * from "./edge-morphology.js";
 export * from "./transform.js";
 export * from "./testgrid.js";
 
-/** Display metadata for a built-in filter, used to drive a generic filter-list UI. */
+/**
+ * Display metadata for a built-in filter, used to drive a generic filter-list
+ * UI. `filter` is the single source of truth for what `name` registers to —
+ * registerBuiltInFilters iterates this same list, so a name can't drift out
+ * of sync between the UI listing and the registry.
+ */
 export interface BuiltInFilterEntry {
   name: string;
   label: string;
   group: "Tone" | "Dither" | "Edges & Morphology" | "Transform";
+  filter: Filter<never>;
 }
 
 export const BUILT_IN_FILTERS: readonly BuiltInFilterEntry[] = [
-  { name: "grayscale", label: "Grayscale", group: "Tone" },
-  { name: "levels", label: "Levels", group: "Tone" },
-  { name: "curves", label: "Curves", group: "Tone" },
-  { name: "brightness-contrast", label: "Brightness/Contrast", group: "Tone" },
-  { name: "gamma", label: "Gamma", group: "Tone" },
-  { name: "dither-floyd-steinberg", label: "Dither: Floyd-Steinberg", group: "Dither" },
-  { name: "dither-atkinson", label: "Dither: Atkinson", group: "Dither" },
-  { name: "dither-jarvis-judice-ninke", label: "Dither: Jarvis-Judice-Ninke", group: "Dither" },
-  { name: "dither-stucki", label: "Dither: Stucki", group: "Dither" },
-  { name: "dither-sierra", label: "Dither: Sierra", group: "Dither" },
-  { name: "dither-burkes", label: "Dither: Burkes", group: "Dither" },
-  { name: "dither-bayer", label: "Dither: Bayer (ordered)", group: "Dither" },
-  { name: "dither-blue-noise", label: "Dither: Blue Noise", group: "Dither" },
-  { name: "halftone", label: "Halftone", group: "Edges & Morphology" },
-  { name: "sobel-edge-detect", label: "Edge Detect: Sobel", group: "Edges & Morphology" },
-  { name: "canny-edge-detect", label: "Edge Detect: Canny", group: "Edges & Morphology" },
-  { name: "erode", label: "Erode", group: "Edges & Morphology" },
-  { name: "dilate", label: "Dilate", group: "Edges & Morphology" },
-  { name: "morph-open", label: "Morphological Open", group: "Edges & Morphology" },
-  { name: "morph-close", label: "Morphological Close", group: "Edges & Morphology" },
-  { name: "crop", label: "Crop (full image)", group: "Transform" },
-  { name: "rotate", label: "Rotate 90°", group: "Transform" },
-  { name: "resize", label: "Resize (50%)", group: "Transform" },
+  { name: "grayscale", label: "Grayscale", group: "Tone", filter: grayscale as Filter<never> },
+  { name: "levels", label: "Levels", group: "Tone", filter: levels as Filter<never> },
+  { name: "curves", label: "Curves", group: "Tone", filter: curves as Filter<never> },
+  {
+    name: "brightness-contrast",
+    label: "Brightness/Contrast",
+    group: "Tone",
+    filter: brightnessContrast as Filter<never>,
+  },
+  { name: "gamma", label: "Gamma", group: "Tone", filter: adjustGamma as Filter<never> },
+  {
+    name: "dither-floyd-steinberg",
+    label: "Dither: Floyd-Steinberg",
+    group: "Dither",
+    filter: ditherFloydSteinberg as Filter<never>,
+  },
+  {
+    name: "dither-atkinson",
+    label: "Dither: Atkinson",
+    group: "Dither",
+    filter: ditherAtkinson as Filter<never>,
+  },
+  {
+    name: "dither-jarvis-judice-ninke",
+    label: "Dither: Jarvis-Judice-Ninke",
+    group: "Dither",
+    filter: ditherJarvisJudiceNinke as Filter<never>,
+  },
+  {
+    name: "dither-stucki",
+    label: "Dither: Stucki",
+    group: "Dither",
+    filter: ditherStucki as Filter<never>,
+  },
+  {
+    name: "dither-sierra",
+    label: "Dither: Sierra",
+    group: "Dither",
+    filter: ditherSierra as Filter<never>,
+  },
+  {
+    name: "dither-burkes",
+    label: "Dither: Burkes",
+    group: "Dither",
+    filter: ditherBurkes as Filter<never>,
+  },
+  {
+    name: "dither-bayer",
+    label: "Dither: Bayer (ordered)",
+    group: "Dither",
+    filter: ditherBayer as Filter<never>,
+  },
+  {
+    name: "dither-blue-noise",
+    label: "Dither: Blue Noise",
+    group: "Dither",
+    filter: ditherBlueNoise as Filter<never>,
+  },
+  {
+    name: "halftone",
+    label: "Halftone",
+    group: "Edges & Morphology",
+    filter: halftone as Filter<never>,
+  },
+  {
+    name: "sobel-edge-detect",
+    label: "Edge Detect: Sobel",
+    group: "Edges & Morphology",
+    filter: sobelEdgeDetect as Filter<never>,
+  },
+  {
+    name: "canny-edge-detect",
+    label: "Edge Detect: Canny",
+    group: "Edges & Morphology",
+    filter: cannyEdgeDetect as Filter<never>,
+  },
+  { name: "erode", label: "Erode", group: "Edges & Morphology", filter: erode as Filter<never> },
+  {
+    name: "dilate",
+    label: "Dilate",
+    group: "Edges & Morphology",
+    filter: dilate as Filter<never>,
+  },
+  {
+    name: "morph-open",
+    label: "Morphological Open",
+    group: "Edges & Morphology",
+    filter: morphOpen as Filter<never>,
+  },
+  {
+    name: "morph-close",
+    label: "Morphological Close",
+    group: "Edges & Morphology",
+    filter: morphClose as Filter<never>,
+  },
+  { name: "crop", label: "Crop (full image)", group: "Transform", filter: crop as Filter<never> },
+  { name: "rotate", label: "Rotate 90°", group: "Transform", filter: rotate as Filter<never> },
+  {
+    name: "resize",
+    label: "Resize (50%)",
+    group: "Transform",
+    filter: resize as Filter<never>,
+  },
 ];
 
 /**
@@ -65,32 +152,13 @@ export const BUILT_IN_FILTERS: readonly BuiltInFilterEntry[] = [
  * BUILT_IN_FILTERS. Every filter here accepts `{}` as a valid options object
  * (each option field has a sensible internal default), so a generic UI can
  * call `registry.apply(name, image, {})` without knowing each filter's options.
+ * Idempotent: already-registered names are skipped rather than throwing, so
+ * calling this more than once on the same registry (e.g. under dev-mode hot
+ * reload) is safe.
  */
 export function registerBuiltInFilters(registry: FilterRegistry): void {
-  registry.register("grayscale", grayscale);
-  registry.register("levels", levels);
-  registry.register("curves", curves);
-  registry.register("brightness-contrast", brightnessContrast);
-  registry.register("gamma", adjustGamma);
-
-  registry.register("dither-floyd-steinberg", ditherFloydSteinberg);
-  registry.register("dither-atkinson", ditherAtkinson);
-  registry.register("dither-jarvis-judice-ninke", ditherJarvisJudiceNinke);
-  registry.register("dither-stucki", ditherStucki);
-  registry.register("dither-sierra", ditherSierra);
-  registry.register("dither-burkes", ditherBurkes);
-  registry.register("dither-bayer", ditherBayer);
-  registry.register("dither-blue-noise", ditherBlueNoise);
-
-  registry.register("halftone", halftone);
-  registry.register("sobel-edge-detect", sobelEdgeDetect);
-  registry.register("canny-edge-detect", cannyEdgeDetect);
-  registry.register("erode", erode);
-  registry.register("dilate", dilate);
-  registry.register("morph-open", morphOpen);
-  registry.register("morph-close", morphClose);
-
-  registry.register("crop", crop);
-  registry.register("rotate", rotate);
-  registry.register("resize", resize);
+  for (const entry of BUILT_IN_FILTERS) {
+    if (registry.has(entry.name)) continue;
+    registry.register(entry.name, entry.filter);
+  }
 }
