@@ -1,34 +1,40 @@
-import type { FilterRegistry } from "@maker/core-image";
+import { BUILT_IN_FILTERS, type BuiltInFilterEntry } from "@maker/core-image";
 
 interface FilterPanelProps {
-  registry: FilterRegistry;
+  onApply: (name: string) => void;
   disabled?: boolean;
 }
 
-/**
- * Stage 0 placeholder panel. Stage 1 registers the real filters (dithering,
- * levels, edge detection, ...) into the same FilterRegistry instance passed
- * in here, and this list becomes real controls.
- */
-export function FilterPanel({ registry, disabled }: FilterPanelProps) {
-  const filters = registry.list();
+function groupFilters(entries: readonly BuiltInFilterEntry[]): Map<string, BuiltInFilterEntry[]> {
+  const groups = new Map<string, BuiltInFilterEntry[]>();
+  for (const entry of entries) {
+    const group = groups.get(entry.group) ?? [];
+    group.push(entry);
+    groups.set(entry.group, group);
+  }
+  return groups;
+}
+
+export function FilterPanel({ onApply, disabled }: FilterPanelProps) {
+  const groups = groupFilters(BUILT_IN_FILTERS);
 
   return (
     <aside className="filter-panel">
       <h2>Filters</h2>
-      {filters.length === 0 ? (
-        <p className="filter-panel__empty">No filters registered yet — coming in Stage 1.</p>
-      ) : (
-        <ul>
-          {filters.map((name) => (
-            <li key={name}>
-              <button type="button" disabled={disabled}>
-                {name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {Array.from(groups.entries()).map(([group, entries]) => (
+        <section key={group} className="filter-panel__group">
+          <h3>{group}</h3>
+          <ul>
+            {entries.map(({ name, label }) => (
+              <li key={name}>
+                <button type="button" disabled={disabled} onClick={() => onApply(name)}>
+                  {label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </aside>
   );
 }
