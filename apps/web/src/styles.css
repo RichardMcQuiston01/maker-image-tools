@@ -237,3 +237,116 @@ body {
 .text-panel__error {
   color: light-dark(#b91c1c, #f87171);
 }
+
+.toolpath-section {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid light-dark(#ddd, #333);
+}
+
+.toolpath-section__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.toolpath-section__side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.gcode-panel,
+.nesting-panel,
+.machine-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gcode-panel label,
+.nesting-panel label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.gcode-panel input[type="number"],
+.nesting-panel input[type="number"] {
+  width: 5rem;
+}
+
+.gcode-panel__error,
+.nesting-panel__error,
+.machine-panel__error {
+  color: light-dark(#b91c1c, #f87171);
+}
+
+.toolpath-preview {
+  max-width: 100%;
+  border: 1px solid light-dark(#ddd, #333);
+  border-radius: 0.5rem;
+  background: light-dark(#fff, #111);
+}
+
+.toolpath-preview--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 12rem;
+  color: light-dark(#888, #999);
+  border: 1px solid light-dark(#ddd, #333);
+  border-radius: 0.5rem;
+}
+
+.nesting-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.nesting-preview--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8rem;
+  color: light-dark(#888, #999);
+  border: 1px solid light-dark(#ddd, #333);
+  border-radius: 0.5rem;
+}
+
+.nesting-preview__bin {
+  max-width: 100%;
+  border: 1px solid light-dark(#ddd, #333);
+  border-radius: 0.5rem;
+  background: light-dark(#fff, #111);
+}
+
+.nesting-preview__bin-rect {
+  fill: none;
+  stroke: light-dark(#bbb, #555);
+  stroke-dasharray: 2, 2;
+}
+
+.machine-panel__unsupported {
+  color: light-dark(#888, #999);
+}
+
+.machine-panel__jog {
+  display: grid;
+  grid-template-columns: repeat(3, 2.5rem);
+  gap: 0.25rem;
+  justify-content: start;
+}
+
+.machine-panel__jog button {
+  padding: 0.4rem;
+  border: 1px solid light-dark(#bbb, #555);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}

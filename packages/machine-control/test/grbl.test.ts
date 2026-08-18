@@ -21,6 +21,13 @@ class FakeTransport implements SerialTransport {
   }
 }
 
+/** Flushes microtasks until the transport has recorded at least `count` writes. */
+async function waitForWriteCount(transport: FakeTransport, count: number): Promise<void> {
+  for (let i = 0; i < 50 && transport.written.length < count; i++) {
+    await Promise.resolve();
+  }
+}
+
 describe("GrblController.sendLine", () => {
   it("resolves when an ok line arrives", async () => {
     const transport = new FakeTransport();
@@ -159,10 +166,10 @@ describe("GrblController.streamGcode", () => {
       progressCalls.push([sent, total]);
     });
 
-    // Respond to each expected command in order.
-    for (let i = 0; i < 3; i++) {
-      // Wait a tick for the write to happen before responding.
-      await Promise.resolve();
+    // Respond to each expected command in order, waiting for the write to
+    // actually happen before emitting each response.
+    for (let i = 1; i <= 3; i++) {
+      await waitForWriteCount(transport, i);
       transport.emitLine("ok");
     }
 
@@ -184,9 +191,9 @@ describe("GrblController.streamGcode", () => {
 
     const streamPromise = controller.streamGcode(lines);
 
-    await Promise.resolve();
+    await waitForWriteCount(transport, 1);
     transport.emitLine("ok");
-    await Promise.resolve();
+    await waitForWriteCount(transport, 2);
     transport.emitLine("error:9");
 
     await expect(streamPromise).rejects.toThrow(/9/);

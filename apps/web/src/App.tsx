@@ -10,6 +10,7 @@ import {
   traceImage,
   updateLayer,
   type LayerSettings,
+  type NestResult,
   type VectorDocument,
 } from "@maker/core-vector";
 import type * as opentype from "opentype.js";
@@ -19,8 +20,19 @@ import { FilterPanel } from "./components/FilterPanel";
 import { VectorPreview } from "./components/VectorPreview";
 import { LayerPanel } from "./components/LayerPanel";
 import { TextToPathPanel } from "./components/TextToPathPanel";
+import { GcodePanel } from "./components/GcodePanel";
+import { GcodeToolpathPreview } from "./components/GcodeToolpathPreview";
+import { NestingPanel } from "./components/NestingPanel";
+import { NestingPreview } from "./components/NestingPreview";
+import { MachinePanel } from "./components/MachinePanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
+
+interface NestingState {
+  result: NestResult;
+  binWidth: number;
+  binHeight: number;
+}
 
 function createInitialDocument(): VectorDocument {
   return addLayer(createDocument(), { name: "Layer 1" });
@@ -32,6 +44,8 @@ export function App() {
   const [image, setImage] = useState<ImageData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [vectorDoc, setVectorDoc] = useState<VectorDocument>(createInitialDocument);
+  const [gcode, setGcode] = useState<string | null>(null);
+  const [nesting, setNesting] = useState<NestingState | null>(null);
 
   const filterRegistry = useMemo(() => {
     const registry = createFilterRegistry();
@@ -121,17 +135,33 @@ export function App() {
     setVectorDoc((doc) => updateLayer(doc, layerId, changes));
   }, []);
 
+  const vectorPaths = useMemo(() => vectorDoc.objects.map((object) => object.path), [vectorDoc]);
+
   const handleExportSvg = useCallback(() => {
-    const paths = vectorDoc.objects.map((object) => object.path);
-    const svg = pathsToSvg(paths, image ? { width: image.width, height: image.height } : undefined);
+    const svg = pathsToSvg(
+      vectorPaths,
+      image ? { width: image.width, height: image.height } : undefined,
+    );
     downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "maker-image-tools-export.svg");
-  }, [vectorDoc, image]);
+  }, [vectorPaths, image]);
 
   const handleExportDxf = useCallback(() => {
-    const paths = vectorDoc.objects.map((object) => object.path);
-    const dxf = pathsToDxf(paths);
+    const dxf = pathsToDxf(vectorPaths);
     downloadBlob(new Blob([dxf], { type: "application/dxf" }), "maker-image-tools-export.dxf");
-  }, [vectorDoc]);
+  }, [vectorPaths]);
+
+  const handleGcodeGenerated = useCallback((generated: string) => {
+    setGcode(generated);
+  }, []);
+
+  const handleDownloadGcode = useCallback(() => {
+    if (!gcode) return;
+    downloadBlob(new Blob([gcode], { type: "text/plain" }), "maker-image-tools-export.gcode");
+  }, [gcode]);
+
+  const handleNested = useCallback((result: NestResult, binWidth: number, binHeight: number) => {
+    setNesting({ result, binWidth, binHeight });
+  }, []);
 
   const hasVectorObjects = vectorDoc.objects.length > 0;
 
@@ -195,6 +225,33 @@ export function App() {
                   onUpdateLayer={handleUpdateLayer}
                 />
                 <TextToPathPanel onAddText={handleAddText} />
+              </div>
+            </div>
+
+            <div className="toolpath-section">
+              <div className="toolpath-section__preview">
+                {nesting && (
+                  <NestingPreview
+                    result={nesting.result}
+                    binWidth={nesting.binWidth}
+                    binHeight={nesting.binHeight}
+                  />
+                )}
+                {gcode && (
+                  <>
+                    <GcodeToolpathPreview gcode={gcode} />
+                    <div className="editor__actions">
+                      <button type="button" onClick={handleDownloadGcode}>
+                        Download .gcode
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="toolpath-section__side">
+                <NestingPanel paths={vectorPaths} onNested={handleNested} />
+                <GcodePanel paths={vectorPaths} onGenerate={handleGcodeGenerated} />
+                <MachinePanel gcode={gcode} />
               </div>
             </div>
           </>
