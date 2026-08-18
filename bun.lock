@@ -54,10 +54,35 @@
       "name": "@maker/core-vector",
       "version": "0.0.0",
       "dependencies": {
+        "clipper-lib": "^6.4.2",
         "opentype.js": "^1.3.4",
       },
       "devDependencies": {
         "@types/opentype.js": "^1.3.8",
+        "jsdom": "^25.0.1",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
+    "packages/gcode": {
+      "name": "@maker/gcode",
+      "version": "0.0.0",
+      "dependencies": {
+        "@maker/core-vector": "workspace:*",
+      },
+      "devDependencies": {
+        "jsdom": "^25.0.1",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
+    "packages/machine-control": {
+      "name": "@maker/machine-control",
+      "version": "0.0.0",
+      "dependencies": {
+        "@maker/core-vector": "workspace:*",
+      },
+      "devDependencies": {
         "jsdom": "^25.0.1",
         "typescript": "^5.7.3",
         "vitest": "^3.0.4",
@@ -212,6 +237,10 @@
     "@maker/core-image": ["@maker/core-image@workspace:packages/core-image"],
 
     "@maker/core-vector": ["@maker/core-vector@workspace:packages/core-vector"],
+
+    "@maker/gcode": ["@maker/gcode@workspace:packages/gcode"],
+
+    "@maker/machine-control": ["@maker/machine-control@workspace:packages/machine-control"],
 
     "@maker/web": ["@maker/web@workspace:apps/web"],
 
@@ -378,6 +407,8 @@
     "chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
 
     "check-error": ["check-error@2.1.3", "", {}, "sha512-PAJdDJusoxnwm1VwW07VWwUN1sl7smmC3OKggvndJFadxxDRyFJBX/ggnu/KE4kQAB7a3Dp8f/YXC1FlUprWmA=="],
+
+    "clipper-lib": ["clipper-lib@6.4.2", "", {}, "sha512-knglhjQX5ihNj/XCIs6zCHrTemdvHY3LPZP9XB2nq2/3igyYMFueFXtfp84baJvEE+f8pO1ZS4UVeEgmLnAprQ=="],
 
     "color-convert": ["color-convert@2.0.1", "", { "dependencies": { "color-name": "~1.1.4" } }, "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ=="],
 
