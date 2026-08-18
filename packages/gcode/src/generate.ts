@@ -153,7 +153,9 @@ export function rasterToGcode(image: ImageData, options: RasterGcodeOptions = {}
           }
 
           const worldXLast = originX + lastCol * pixelSizeMm;
-          lines.push(`G1 X${formatCoord(worldXLast)} Y${formatCoord(worldY)} F${formatCoord(feedRate)}`);
+          lines.push(
+            `G1 X${formatCoord(worldXLast)} Y${formatCoord(worldY)} F${formatCoord(feedRate)}`,
+          );
         }
 
         positioned = true;

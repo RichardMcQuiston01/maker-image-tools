@@ -141,10 +141,9 @@ function findPlacementInBin(
     const overlappingInY = placed.filter(
       (r) => r.y < y + inflatedHeight && y < r.y + r.height + spacing,
     );
-    const candidateXs = [
-      spacing,
-      ...overlappingInY.map((r) => r.x + r.width + spacing),
-    ].sort((a, b) => a - b);
+    const candidateXs = [spacing, ...overlappingInY.map((r) => r.x + r.width + spacing)].sort(
+      (a, b) => a - b,
+    );
 
     for (const x of candidateXs) {
       if (x + inflatedWidth > binWidth) continue;
@@ -191,9 +190,7 @@ export function nestParts(parts: VectorPath[], options: NestOptions): NestResult
     return { partIndex, ...best };
   });
 
-  const sortedOrder = candidates
-    .slice()
-    .sort((a, b) => b.width * b.height - a.width * a.height);
+  const sortedOrder = candidates.slice().sort((a, b) => b.width * b.height - a.width * a.height);
 
   const bins: PlacedRect[][] = [[]];
   const records = new Map<number, PlacementRecord>();

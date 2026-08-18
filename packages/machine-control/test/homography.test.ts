@@ -22,9 +22,7 @@ function correspondencesFor(points: Point[]): PointCorrespondence[] {
 describe("computeHomography", () => {
   it("throws when given fewer than 4 correspondences", () => {
     const correspondences = correspondencesFor(squareCorners.slice(0, 3));
-    expect(() => computeHomography(correspondences)).toThrow(
-      /at least 4 point correspondences/,
-    );
+    expect(() => computeHomography(correspondences)).toThrow(/at least 4 point correspondences/);
   });
 
   it("recovers a known scale+translate transform from its 4 corner correspondences", () => {

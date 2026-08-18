@@ -1,4 +1,11 @@
-import { ClipperOffset, EndType, JoinType, type IntPoint, type Path, type Paths } from "clipper-lib";
+import {
+  ClipperOffset,
+  EndType,
+  JoinType,
+  type IntPoint,
+  type Path,
+  type Paths,
+} from "clipper-lib";
 import { flattenPath } from "./editor.js";
 import type { PathCommand, Point, VectorPath } from "./types.js";
 
@@ -33,7 +40,11 @@ function joinTypeFor(joinType: OffsetOptions["joinType"]): number {
  * in the output. Clipper's offset result is always one or more closed
  * polygons, even for open input, so every returned VectorPath ends with Z.
  */
-export function offsetPath(path: VectorPath, distance: number, options?: OffsetOptions): VectorPath[] {
+export function offsetPath(
+  path: VectorPath,
+  distance: number,
+  options?: OffsetOptions,
+): VectorPath[] {
   const scale = options?.scale ?? DEFAULT_SCALE;
   const closed = options?.closed ?? path.commands[path.commands.length - 1]?.type === "Z";
 

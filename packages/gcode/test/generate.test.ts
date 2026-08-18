@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { VectorPath } from "@maker/core-vector";
 import { pathsToGcode, rasterToGcode } from "../src/generate.js";
 
-function solidImage(width: number, height: number, rgba: [number, number, number, number]): ImageData {
+function solidImage(
+  width: number,
+  height: number,
+  rgba: [number, number, number, number],
+): ImageData {
   const data = new Uint8ClampedArray(width * height * 4);
   for (let i = 0; i < width * height; i++) {
     data[i * 4] = rgba[0];
@@ -19,20 +23,17 @@ describe("pathsToGcode", () => {
   it("emits exact preamble/postamble/format for a simple 2-point path", () => {
     const path: VectorPath = {
       id: "p1",
-      commands: [{ type: "M", point: { x: 0, y: 0 } }, { type: "L", point: { x: 10, y: 0 } }],
+      commands: [
+        { type: "M", point: { x: 0, y: 0 } },
+        { type: "L", point: { x: 10, y: 0 } },
+      ],
     };
 
     const result = pathsToGcode([path]);
 
-    const expected = [
-      ...PREAMBLE,
-      "G0 X0 Y0",
-      "M4 S1000",
-      "G1 X10 Y0 F1000",
-      "M5",
-      "G0 X0 Y0",
-      "M5",
-    ].join("\n") + "\n";
+    const expected =
+      [...PREAMBLE, "G0 X0 Y0", "M4 S1000", "G1 X10 Y0 F1000", "M5", "G0 X0 Y0", "M5"].join("\n") +
+      "\n";
 
     expect(result).toBe(expected);
   });
@@ -49,16 +50,17 @@ describe("pathsToGcode", () => {
 
     const result = pathsToGcode([path]);
 
-    const expected = [
-      ...PREAMBLE,
-      "G0 X0 Y0",
-      "M4 S1000",
-      "G1 X10 Y0 F1000",
-      "G1 X10 Y10",
-      "M5",
-      "G0 X0 Y0",
-      "M5",
-    ].join("\n") + "\n";
+    const expected =
+      [
+        ...PREAMBLE,
+        "G0 X0 Y0",
+        "M4 S1000",
+        "G1 X10 Y0 F1000",
+        "G1 X10 Y10",
+        "M5",
+        "G0 X0 Y0",
+        "M5",
+      ].join("\n") + "\n";
 
     expect(result).toBe(expected);
   });
@@ -66,7 +68,10 @@ describe("pathsToGcode", () => {
   it("defaults to M4 S1000", () => {
     const path: VectorPath = {
       id: "p1",
-      commands: [{ type: "M", point: { x: 0, y: 0 } }, { type: "L", point: { x: 1, y: 1 } }],
+      commands: [
+        { type: "M", point: { x: 0, y: 0 } },
+        { type: "L", point: { x: 1, y: 1 } },
+      ],
     };
 
     const result = pathsToGcode([path]);
@@ -77,7 +82,10 @@ describe("pathsToGcode", () => {
   it("reflects custom power/feedRate/passes/originX/originY", () => {
     const path: VectorPath = {
       id: "p1",
-      commands: [{ type: "M", point: { x: 0, y: 0 } }, { type: "L", point: { x: 10, y: 0 } }],
+      commands: [
+        { type: "M", point: { x: 0, y: 0 } },
+        { type: "L", point: { x: 10, y: 0 } },
+      ],
     };
 
     const result = pathsToGcode([path], {
@@ -101,20 +109,17 @@ describe("pathsToGcode", () => {
     };
     const validPath: VectorPath = {
       id: "valid",
-      commands: [{ type: "M", point: { x: 0, y: 0 } }, { type: "L", point: { x: 5, y: 5 } }],
+      commands: [
+        { type: "M", point: { x: 0, y: 0 } },
+        { type: "L", point: { x: 5, y: 5 } },
+      ],
     };
 
     const result = pathsToGcode([skipPath, validPath]);
 
-    const expected = [
-      ...PREAMBLE,
-      "G0 X0 Y0",
-      "M4 S1000",
-      "G1 X5 Y5 F1000",
-      "M5",
-      "G0 X0 Y0",
-      "M5",
-    ].join("\n") + "\n";
+    const expected =
+      [...PREAMBLE, "G0 X0 Y0", "M4 S1000", "G1 X5 Y5 F1000", "M5", "G0 X0 Y0", "M5"].join("\n") +
+      "\n";
 
     expect(result).toBe(expected);
   });

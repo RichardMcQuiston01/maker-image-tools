@@ -8,9 +8,7 @@ export function GcodeToolpathPreview({ gcode }: GcodeToolpathPreviewProps) {
   const moves = parseGcode(gcode);
 
   if (moves.length === 0) {
-    return (
-      <div className="toolpath-preview toolpath-preview--empty">No toolpath to preview</div>
-    );
+    return <div className="toolpath-preview toolpath-preview--empty">No toolpath to preview</div>;
   }
 
   const bounds = computeGcodeBounds(moves);

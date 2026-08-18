@@ -14,16 +14,7 @@ export interface SerialTransport {
 }
 
 export type GrblStatus =
-  | "Idle"
-  | "Run"
-  | "Hold"
-  | "Jog"
-  | "Alarm"
-  | "Door"
-  | "Check"
-  | "Home"
-  | "Sleep"
-  | "Unknown";
+  "Idle" | "Run" | "Hold" | "Jog" | "Alarm" | "Door" | "Check" | "Home" | "Sleep" | "Unknown";
 
 export interface GrblPosition {
   x: number;
