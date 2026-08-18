@@ -12,9 +12,11 @@ export interface TextToPathsOptions {
  * (a glyph with holes, e.g. "o", yields multiple paths — one per M...Z run).
  *
  * Coordinates are passed through exactly as returned by opentype.js's
- * `Font#getPath`, which follows font-engine convention (Y increases upward,
- * baseline-relative) rather than SVG/canvas Y-down — callers must transform
- * if they need Y-down coordinates.
+ * `Font#getPath` — no flipping or rescaling is applied here. Note that
+ * `getPath` itself already negates each glyph's font-unit Y (which is
+ * upward-positive) before returning, so the resulting points follow
+ * baseline-relative, Y-down coordinates; callers that need a different
+ * convention must transform the output themselves.
  */
 export function textToPaths(
   font: opentype.Font,

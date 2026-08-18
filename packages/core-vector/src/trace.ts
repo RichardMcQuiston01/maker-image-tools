@@ -135,31 +135,56 @@ function traceBoundary(
   let currentX = start.x;
   let currentY = start.y;
   let backtrack = WEST_DIRECTION;
-  const initialBacktrack = backtrack;
 
   const points: Point[] = [{ x: currentX + 0.5, y: currentY + 0.5 }];
+  // The pixel reached by the very first move away from `start` — Jacob's stopping criterion is
+  // re-arriving at this pixel by that same start->secondPixel transition, not merely revisiting
+  // `start` (a plain backtrack-direction match can under-fire at corners, where several distinct
+  // backtrack values all search around to the same next pixel).
+  let secondPixelX = -1;
+  let secondPixelY = -1;
+  let haveSecondPixel = false;
 
   const maxSteps = 8 * pixelCount;
   for (let step = 0; step < maxSteps; step++) {
-    let moved = false;
-
+    let foundDir = -1;
+    let nx = 0;
+    let ny = 0;
     for (let i = 1; i <= 8; i++) {
       const dir = (backtrack + i) % 8;
       const offset = NEIGHBOR_OFFSETS[dir] as readonly [number, number];
-      const nx = currentX + offset[0];
-      const ny = currentY + offset[1];
-      if (!isMember(nx, ny)) continue;
-
-      currentX = nx;
-      currentY = ny;
-      backtrack = (dir + 4) % 8; // opposite of the direction just traveled
-      points.push({ x: currentX + 0.5, y: currentY + 0.5 });
-      moved = true;
-      break;
+      const tx = currentX + offset[0];
+      const ty = currentY + offset[1];
+      if (isMember(tx, ty)) {
+        foundDir = dir;
+        nx = tx;
+        ny = ty;
+        break;
+      }
     }
 
-    if (!moved) break; // isolated pixel: no foreground neighbor to continue to
-    if (currentX === start.x && currentY === start.y && backtrack === initialBacktrack) break;
+    if (foundDir === -1) break; // isolated pixel: no foreground neighbor to continue to
+
+    if (
+      haveSecondPixel &&
+      currentX === start.x &&
+      currentY === start.y &&
+      nx === secondPixelX &&
+      ny === secondPixelY
+    ) {
+      break; // about to repeat the start->secondPixel move: boundary is closed
+    }
+
+    currentX = nx;
+    currentY = ny;
+    backtrack = (foundDir + 4) % 8; // opposite of the direction just traveled
+    points.push({ x: currentX + 0.5, y: currentY + 0.5 });
+
+    if (!haveSecondPixel) {
+      secondPixelX = currentX;
+      secondPixelY = currentY;
+      haveSecondPixel = true;
+    }
   }
 
   return points;

@@ -51,6 +51,8 @@ describe("textToPaths", () => {
     expect(path.id).toBeTruthy();
 
     // fontSize 1000 == unitsPerEm 1000, so scale factor is 1; x/y default to 0.
+    // opentype.js's Font#getPath negates each glyph's (upward-positive) font-unit
+    // Y before returning, so e.g. glyph-space (0, 300) comes back as (0, -300).
     const m = path.commands[0];
     if (m.type !== "M") throw new Error("expected M");
     expect(m.point.x).toBeCloseTo(0);
@@ -64,12 +66,12 @@ describe("textToPaths", () => {
     const l2 = path.commands[2];
     if (l2.type !== "L") throw new Error("expected L");
     expect(l2.point.x).toBeCloseTo(300);
-    expect(l2.point.y).toBeCloseTo(300);
+    expect(l2.point.y).toBeCloseTo(-300);
 
     const l3 = path.commands[3];
     if (l3.type !== "L") throw new Error("expected L");
     expect(l3.point.x).toBeCloseTo(0);
-    expect(l3.point.y).toBeCloseTo(300);
+    expect(l3.point.y).toBeCloseTo(-300);
   });
 
   it("offsets glyph coordinates by the given x/y", () => {
