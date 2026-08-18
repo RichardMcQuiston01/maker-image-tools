@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  commandsToPathData,
-  pathDataToCommands,
-  pathsToSvg,
-  svgToPaths,
-} from "../src/svg-io.js";
+import { commandsToPathData, pathDataToCommands, pathsToSvg, svgToPaths } from "../src/svg-io.js";
 
 describe("pathDataToCommands / commandsToPathData round-trip", () => {
   it("round-trips a simple absolute path", () => {
@@ -90,14 +85,19 @@ describe("pathDataToCommands / commandsToPathData round-trip", () => {
     // Arc is approximated with line segments; the final L command must still parse.
     const last = commands[commands.length - 1];
     expect(last).toEqual({ type: "L", point: { x: 20, y: 20 } });
-    // At least the arc's endpoint should be reachable via the approximation.
-    expect(commands.some((c) => c.type === "L" && c.point.x === 10 && c.point.y === 10)).toBe(true);
+    // The arc's endpoint should be reachable via the approximation (within float tolerance).
+    expect(
+      commands.some(
+        (c) => c.type === "L" && Math.abs(c.point.x - 10) < 1e-6 && Math.abs(c.point.y - 10) < 1e-6,
+      ),
+    ).toBe(true);
   });
 });
 
 describe("svgToPaths", () => {
   it("parses a <rect> into a closed 4-point path", () => {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="10" height="5"/></svg>';
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="10" height="5"/></svg>';
     const paths = svgToPaths(svg);
     expect(paths).toHaveLength(1);
     const commands = paths[0]?.commands ?? [];
@@ -117,7 +117,8 @@ describe("svgToPaths", () => {
   });
 
   it("parses a <line> into an open 2-point path", () => {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="10" y2="10"/></svg>';
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="10" y2="10"/></svg>';
     const paths = svgToPaths(svg);
     expect(paths).toHaveLength(1);
     const commands = paths[0]?.commands ?? [];
@@ -128,8 +129,7 @@ describe("svgToPaths", () => {
   });
 
   it("parses a <polygon> into a closed path", () => {
-    const svg =
-      '<svg xmlns="http://www.w3.org/2000/svg"><polygon points="0,0 10,0 10,10"/></svg>';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><polygon points="0,0 10,0 10,10"/></svg>';
     const paths = svgToPaths(svg);
     expect(paths).toHaveLength(1);
     const commands = paths[0]?.commands ?? [];

@@ -200,7 +200,12 @@ function perpendicularDistance(p: Point, a: Point, b: Point): number {
   return Math.abs(cross) / length;
 }
 
-function douglasPeucker(points: readonly Point[], start: number, end: number, tolerance: number): Point[] {
+function douglasPeucker(
+  points: readonly Point[],
+  start: number,
+  end: number,
+  tolerance: number,
+): Point[] {
   const a = points[start] as Point;
   const b = points[end] as Point;
 

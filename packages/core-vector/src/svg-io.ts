@@ -147,7 +147,6 @@ export function pathDataToCommands(d: string): PathCommand[] {
       if (t.kind === "cmd") {
         currentLetter = t.letter;
         i++;
-        continue;
       }
       if (currentLetter === null) break;
 
@@ -156,7 +155,7 @@ export function pathDataToCommands(d: string): PathCommand[] {
         case "m": {
           const x = nextNum();
           const y = nextNum();
-          const abs = currentLetter === "M";
+          const abs: boolean = currentLetter === "M";
           cx = abs ? x : cx + x;
           cy = abs ? y : cy + y;
           sx = cx;
@@ -451,7 +450,10 @@ export function svgToPaths(svgString: string): VectorPath[] {
  * geometry itself is not clipped to the viewport, so this is just a nominal
  * document size) and can be overridden via `options`.
  */
-export function pathsToSvg(paths: VectorPath[], options?: { width?: number; height?: number }): string {
+export function pathsToSvg(
+  paths: VectorPath[],
+  options?: { width?: number; height?: number },
+): string {
   const width = options?.width ?? 400;
   const height = options?.height ?? 400;
   const root = createSvgRoot(width, height);

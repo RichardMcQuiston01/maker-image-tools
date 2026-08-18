@@ -56,7 +56,9 @@ function flattenPath(path: VectorPath): { points: Point[]; closed: boolean }[] {
     } else if (command.type === "C") {
       for (let i = 1; i <= CURVE_SEGMENTS; i++) {
         const t = i / CURVE_SEGMENTS;
-        current.push(cubicBezierPoint(cursor, command.control1, command.control2, command.point, t));
+        current.push(
+          cubicBezierPoint(cursor, command.control1, command.control2, command.point, t),
+        );
       }
       cursor = command.point;
     } else if (command.type === "Q") {
@@ -99,7 +101,17 @@ export function pathsToDxf(paths: VectorPath[]): string {
     }
   }
 
-  const lines = ["0", "SECTION", "2", "ENTITIES", ...entities.flatMap((e) => e.split("\n")), "0", "ENDSEC", "0", "EOF"];
+  const lines = [
+    "0",
+    "SECTION",
+    "2",
+    "ENTITIES",
+    ...entities.flatMap((e) => e.split("\n")),
+    "0",
+    "ENDSEC",
+    "0",
+    "EOF",
+  ];
   return lines.join("\n");
 }
 
@@ -229,7 +241,11 @@ function arcToPath(fields: GroupPair[]): VectorPath {
   return newPath(commands);
 }
 
-function polylineToPath(fields: GroupPair[], allEntitiesFromHere: RawEntity[], index: number): VectorPath | null {
+function polylineToPath(
+  fields: GroupPair[],
+  allEntitiesFromHere: RawEntity[],
+  index: number,
+): VectorPath | null {
   const flags = Math.trunc(numberOr(findValue(fields, 70), 0));
   const closed = (flags & 1) === 1;
 

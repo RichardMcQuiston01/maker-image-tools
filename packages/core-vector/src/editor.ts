@@ -48,7 +48,8 @@ function flattenCubic(
   out: Point[],
 ): void {
   const flat =
-    perpendicularDistance(p1, p0, p3) <= tolerance && perpendicularDistance(p2, p0, p3) <= tolerance;
+    perpendicularDistance(p1, p0, p3) <= tolerance &&
+    perpendicularDistance(p2, p0, p3) <= tolerance;
   if (depth >= MAX_FLATTEN_DEPTH || flat) {
     out.push(p3);
     return;

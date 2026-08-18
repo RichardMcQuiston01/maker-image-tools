@@ -34,7 +34,10 @@ function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
   const b = 3 * mt * mt * t;
   const c = 3 * mt * t * t;
   const dd = t * t * t;
-  return { x: a * p0.x + b * p1.x + c * p2.x + dd * p3.x, y: a * p0.y + b * p1.y + c * p2.y + dd * p3.y };
+  return {
+    x: a * p0.x + b * p1.x + c * p2.x + dd * p3.x,
+    y: a * p0.y + b * p1.y + c * p2.y + dd * p3.y,
+  };
 }
 
 function quadAt(p0: Point, p1: Point, p2: Point, t: number): Point {
@@ -255,7 +258,12 @@ function traceComponents(
   return contours;
 }
 
-function rasterToSpace(p: { x: number; y: number }, minX: number, minY: number, scale: number): Point {
+function rasterToSpace(
+  p: { x: number; y: number },
+  minX: number,
+  minY: number,
+  scale: number,
+): Point {
   return { x: p.x / scale + minX, y: p.y / scale + minY };
 }
 
@@ -324,7 +332,9 @@ export function booleanOp(
     if (contour.length < 3) continue;
     const first = contour[0];
     if (!first) continue;
-    const commands: PathCommand[] = [{ type: "M", point: rasterToSpace(first, minX, minY, pixelsPerUnit) }];
+    const commands: PathCommand[] = [
+      { type: "M", point: rasterToSpace(first, minX, minY, pixelsPerUnit) },
+    ];
     for (let i = 1; i < contour.length; i++) {
       const pt = contour[i];
       if (!pt) continue;

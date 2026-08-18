@@ -41,7 +41,10 @@ describe("insertPointAfter", () => {
   it("clamps an out-of-range index", () => {
     const path = samplePath();
     const result = insertPointAfter(path, 999, { x: 1, y: 1 });
-    expect(result.commands[result.commands.length - 1]).toEqual({ type: "L", point: { x: 1, y: 1 } });
+    expect(result.commands[result.commands.length - 1]).toEqual({
+      type: "L",
+      point: { x: 1, y: 1 },
+    });
   });
 });
 
@@ -144,7 +147,11 @@ describe("moveControlPoint", () => {
   it("moves the control point of a Q command", () => {
     const path = curvedPath();
     const result = moveControlPoint(path, 2, "control", { x: 40, y: 40 });
-    expect(result.commands[2]).toEqual({ type: "Q", control: { x: 40, y: 40 }, point: { x: 5, y: 5 } });
+    expect(result.commands[2]).toEqual({
+      type: "Q",
+      control: { x: 40, y: 40 },
+      point: { x: 5, y: 5 },
+    });
   });
 
   it("is a no-op when the command type doesn't have the requested control point", () => {

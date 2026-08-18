@@ -29,7 +29,11 @@ if (typeof globalThis.ImageData === "undefined") {
 }
 
 /** Builds an ImageData filled white, with `isForeground` pixels painted black. */
-function makeImage(width: number, height: number, isForeground: (x: number, y: number) => boolean): ImageData {
+function makeImage(
+  width: number,
+  height: number,
+  isForeground: (x: number, y: number) => boolean,
+): ImageData {
   const data = new Uint8ClampedArray(width * height * 4);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -67,7 +71,11 @@ describe("traceImage", () => {
   });
 
   it("traces two separate squares into two separate VectorPaths", () => {
-    const image = makeImage(30, 20, (x, y) => inRect(x, y, 2, 2, 8, 8) || inRect(x, y, 20, 2, 8, 8));
+    const image = makeImage(
+      30,
+      20,
+      (x, y) => inRect(x, y, 2, 2, 8, 8) || inRect(x, y, 20, 2, 8, 8),
+    );
 
     const paths = traceImage(image);
 
@@ -109,7 +117,11 @@ describe("traceImage", () => {
   });
 
   it("returns paths whose commands always start with M and end with Z", () => {
-    const image = makeImage(30, 20, (x, y) => inRect(x, y, 2, 2, 8, 8) || inRect(x, y, 20, 2, 8, 8));
+    const image = makeImage(
+      30,
+      20,
+      (x, y) => inRect(x, y, 2, 2, 8, 8) || inRect(x, y, 20, 2, 8, 8),
+    );
 
     const paths = traceImage(image);
 
