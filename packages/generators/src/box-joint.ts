@@ -156,6 +156,10 @@ export function generateFingerJointBox(options: FingerJointBoxOptions): FingerJo
     specs.push({ label: "top", w: width, h: depth });
   }
 
+  // Finger tabs protrude by materialThickness on both sides of a panel's nominal width, so the
+  // gap between laid-out panels must exceed 2x materialThickness to avoid tabs overlapping.
+  const layoutGap = PANEL_GAP + 2 * materialThickness;
+
   const panels: VectorPath[] = [];
   const panelLabels: string[] = [];
   let offsetX = 0;
@@ -165,7 +169,7 @@ export function generateFingerJointBox(options: FingerJointBoxOptions): FingerJo
     const shifted = rawPoints.map((p) => ({ x: p.x + offsetX, y: p.y }));
     panels.push({ id: crypto.randomUUID(), commands: polygonToPath(shifted) });
     panelLabels.push(spec.label);
-    offsetX += spec.w + PANEL_GAP;
+    offsetX += spec.w + layoutGap;
   }
 
   return { panels, panelLabels };
