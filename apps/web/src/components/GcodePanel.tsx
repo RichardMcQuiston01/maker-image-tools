@@ -1,11 +1,14 @@
 import { useCallback, useState } from "react";
 import { kerfCompensate, type VectorPath } from "@maker/core-vector";
 import { pathsToGcode } from "@maker/gcode";
+import { getAllPresets } from "@maker/material-library";
 
 interface GcodePanelProps {
   paths: VectorPath[];
   onGenerate: (gcode: string) => void;
 }
+
+const MATERIAL_PRESETS = getAllPresets();
 
 export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
   const [feedRate, setFeedRate] = useState(1000);
@@ -13,6 +16,14 @@ export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
   const [passes, setPasses] = useState(1);
   const [kerfWidth, setKerfWidth] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  const handlePresetChange = useCallback((presetId: string) => {
+    const preset = MATERIAL_PRESETS.find((candidate) => candidate.id === presetId);
+    if (!preset) return;
+    setFeedRate(preset.speed);
+    setPower(preset.power);
+    setPasses(preset.passes ?? 1);
+  }, []);
 
   const handleGenerate = useCallback(() => {
     if (paths.length === 0) return;
@@ -31,6 +42,19 @@ export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
   return (
     <section className="gcode-panel">
       <h2>G-code</h2>
+      <label>
+        Material preset
+        <select defaultValue="" onChange={(event) => handlePresetChange(event.target.value)}>
+          <option value="" disabled>
+            Choose a preset…
+          </option>
+          {MATERIAL_PRESETS.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.material} — {preset.machineType} — {preset.operation}
+            </option>
+          ))}
+        </select>
+      </label>
       <label>
         Feed rate (mm/min)
         <input

@@ -25,6 +25,8 @@ import { GcodeToolpathPreview } from "./components/GcodeToolpathPreview";
 import { NestingPanel } from "./components/NestingPanel";
 import { NestingPreview } from "./components/NestingPreview";
 import { MachinePanel } from "./components/MachinePanel";
+import { HeightmapPanel } from "./components/HeightmapPanel";
+import { GeneratorsPanel } from "./components/GeneratorsPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -253,6 +255,11 @@ export function App() {
                 <GcodePanel paths={vectorPaths} onGenerate={handleGcodeGenerated} />
                 <MachinePanel gcode={gcode} />
               </div>
+            </div>
+
+            <div className="advanced-section">
+              <HeightmapPanel image={image} />
+              <GeneratorsPanel onAddPaths={addPathsToFirstLayer} />
             </div>
           </>
         ) : (
