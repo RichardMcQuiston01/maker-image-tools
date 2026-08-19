@@ -13,7 +13,11 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "opentype.js": "^1.3.4"
+  },
   "devDependencies": {
+    "@types/opentype.js": "^1.3.8",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.4"

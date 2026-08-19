@@ -27,4 +27,22 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Export PNG" })).toBeDisabled();
   });
+
+  it("renders the vector section with a default layer, disabled until there's an image/objects", async () => {
+    window.location.hash = "#/editor";
+    render(<App />);
+
+    expect(await screen.findByText(/Drag & drop an image here/)).toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { name: "Layers" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Text to Path" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Layer 1")).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "Trace to Vector" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export SVG" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export DXF" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add Text" })).toBeDisabled();
+
+    expect(screen.getByText(/No vector objects yet/)).toBeInTheDocument();
+  });
 });
