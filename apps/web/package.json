@@ -14,7 +14,9 @@
     "@maker/core-image": "workspace:*",
     "@maker/core-vector": "workspace:*",
     "@maker/gcode": "workspace:*",
+    "@maker/generators": "workspace:*",
     "@maker/machine-control": "workspace:*",
+    "@maker/material-library": "workspace:*",
     "opentype.js": "^1.3.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
