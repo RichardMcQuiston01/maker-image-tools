@@ -122,7 +122,9 @@ describe("searchPresets", () => {
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((p) => p.material.toLowerCase().includes("plywood"))).toBe(true);
 
-    const expectedIds = all.filter((p) => p.material.toLowerCase().includes("plywood")).map((p) => p.id);
+    const expectedIds = all
+      .filter((p) => p.material.toLowerCase().includes("plywood"))
+      .map((p) => p.id);
     expect(results.map((p) => p.id).sort()).toEqual(expectedIds.sort());
   });
 

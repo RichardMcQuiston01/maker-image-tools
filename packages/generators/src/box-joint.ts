@@ -114,17 +114,58 @@ interface PanelSpec {
  * Builds a rectangular panel of size w x h (with origin at 0,0), where every edge is rendered as
  * a finger-joint zigzag at `materialThickness` depth (pointing outward from the rectangle).
  */
-function buildPanel(w: number, h: number, materialThickness: number, targetFingerWidth: number): Point[] {
+function buildPanel(
+  w: number,
+  h: number,
+  materialThickness: number,
+  targetFingerWidth: number,
+): Point[] {
   const points: Point[] = [];
 
   // top edge: (0,0) -> (w,0), outward = up (-y)
-  points.push(...fingerEdgePoints({ x: 0, y: 0 }, { x: 1, y: 0 }, w, { x: 0, y: -1 }, materialThickness, targetFingerWidth));
+  points.push(
+    ...fingerEdgePoints(
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      w,
+      { x: 0, y: -1 },
+      materialThickness,
+      targetFingerWidth,
+    ),
+  );
   // right edge: (w,0) -> (w,h), outward = right (+x)
-  points.push(...fingerEdgePoints({ x: w, y: 0 }, { x: 0, y: 1 }, h, { x: 1, y: 0 }, materialThickness, targetFingerWidth));
+  points.push(
+    ...fingerEdgePoints(
+      { x: w, y: 0 },
+      { x: 0, y: 1 },
+      h,
+      { x: 1, y: 0 },
+      materialThickness,
+      targetFingerWidth,
+    ),
+  );
   // bottom edge: (w,h) -> (0,h), outward = down (+y)
-  points.push(...fingerEdgePoints({ x: w, y: h }, { x: -1, y: 0 }, w, { x: 0, y: 1 }, materialThickness, targetFingerWidth));
+  points.push(
+    ...fingerEdgePoints(
+      { x: w, y: h },
+      { x: -1, y: 0 },
+      w,
+      { x: 0, y: 1 },
+      materialThickness,
+      targetFingerWidth,
+    ),
+  );
   // left edge: (0,h) -> (0,0), outward = left (-x)
-  points.push(...fingerEdgePoints({ x: 0, y: h }, { x: 0, y: -1 }, h, { x: -1, y: 0 }, materialThickness, targetFingerWidth));
+  points.push(
+    ...fingerEdgePoints(
+      { x: 0, y: h },
+      { x: 0, y: -1 },
+      h,
+      { x: -1, y: 0 },
+      materialThickness,
+      targetFingerWidth,
+    ),
+  );
 
   return points;
 }

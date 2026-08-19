@@ -32,7 +32,8 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
     speed: 150,
     power: 1000,
     passes: 4,
-    notes: "Expect char on the exit kerf at this thickness on a diode. A CO2 laser will do this in far fewer passes.",
+    notes:
+      "Expect char on the exit kerf at this thickness on a diode. A CO2 laser will do this in far fewer passes.",
   },
   {
     id: "diode-plywood-3mm-engrave",
@@ -176,7 +177,8 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
     speed: 400,
     power: 700,
     passes: 1,
-    notes: "CO2 handles clear cast acrylic well, unlike a diode laser. Use lower air assist for a flame-polished edge.",
+    notes:
+      "CO2 handles clear cast acrylic well, unlike a diode laser. Use lower air assist for a flame-polished edge.",
   },
   {
     id: "co2-acrylic-6mm-cut",
@@ -279,7 +281,8 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
     operation: "mark",
     speed: 1500,
     power: 400,
-    notes: "A fiber laser ablates the anodized layer cleanly, giving high-contrast marks at modest power.",
+    notes:
+      "A fiber laser ablates the anodized layer cleanly, giving high-contrast marks at modest power.",
   },
   {
     id: "fiber-brass-mark",
@@ -296,7 +299,8 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
     operation: "mark",
     speed: 1200,
     power: 650,
-    notes: "Power/speed control the oxide color produced (straw to blue to black) - test a gradient on scrap.",
+    notes:
+      "Power/speed control the oxide color produced (straw to blue to black) - test a gradient on scrap.",
   },
 
   // ---------------------------------------------------------------------
@@ -332,7 +336,8 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
     speed: 1200,
     power: 16,
     passes: 1,
-    notes: "`power` here is spindle speed in RPM/1000 (16 = 16000 RPM). MDF produces very fine dust - use dust collection.",
+    notes:
+      "`power` here is spindle speed in RPM/1000 (16 = 16000 RPM). MDF produces very fine dust - use dust collection.",
   },
   {
     id: "cnc-aluminum-engrave",

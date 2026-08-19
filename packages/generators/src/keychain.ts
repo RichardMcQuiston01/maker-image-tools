@@ -59,7 +59,7 @@ function hexagonPoints(width: number): Point[] {
   const circumradius = width / Math.sqrt(3);
   const points: Point[] = [];
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 6) + (i / 6) * Math.PI * 2; // rotate so a flat edge faces up
+    const angle = Math.PI / 6 + (i / 6) * Math.PI * 2; // rotate so a flat edge faces up
     points.push({ x: circumradius * Math.cos(angle), y: circumradius * Math.sin(angle) });
   }
   return points;

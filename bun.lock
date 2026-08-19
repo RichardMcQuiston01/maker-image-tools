@@ -78,12 +78,33 @@
         "vitest": "^3.0.4",
       },
     },
+    "packages/generators": {
+      "name": "@maker/generators",
+      "version": "0.0.0",
+      "dependencies": {
+        "@maker/core-vector": "workspace:*",
+      },
+      "devDependencies": {
+        "jsdom": "^25.0.1",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
     "packages/machine-control": {
       "name": "@maker/machine-control",
       "version": "0.0.0",
       "dependencies": {
         "@maker/core-vector": "workspace:*",
       },
+      "devDependencies": {
+        "jsdom": "^25.0.1",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
+    "packages/material-library": {
+      "name": "@maker/material-library",
+      "version": "0.0.0",
       "devDependencies": {
         "jsdom": "^25.0.1",
         "typescript": "^5.7.3",
@@ -242,7 +263,11 @@
 
     "@maker/gcode": ["@maker/gcode@workspace:packages/gcode"],
 
+    "@maker/generators": ["@maker/generators@workspace:packages/generators"],
+
     "@maker/machine-control": ["@maker/machine-control@workspace:packages/machine-control"],
+
+    "@maker/material-library": ["@maker/material-library@workspace:packages/material-library"],
 
     "@maker/web": ["@maker/web@workspace:apps/web"],
 
