@@ -8,3 +8,5 @@ export * from "./document.js";
 export * from "./svg-io.js";
 export * from "./editor.js";
 export * from "./boolean-ops.js";
+export * from "./nesting.js";
+export * from "./offset.js";
