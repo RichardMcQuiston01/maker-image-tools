@@ -1,14 +1,11 @@
 import { useCallback, useState } from "react";
 import { exportImageData } from "@maker/core-image";
 import type { MaterialClassification } from "@maker/ai-inference";
+import { AI_INFERENCE_URL } from "../lib/aiInferenceUrl";
 
 interface MaterialDetectionPanelProps {
   image: ImageData | null;
 }
-
-const AI_INFERENCE_URL = (
-  (import.meta.env.VITE_AI_INFERENCE_URL as string | undefined) ?? "http://localhost:8787"
-).replace(/\/$/, "");
 
 export function MaterialDetectionPanel({ image }: MaterialDetectionPanelProps) {
   const [status, setStatus] = useState<"idle" | "detecting" | "error">("idle");

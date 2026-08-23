@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./wire": "./src/wire-image.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -16,7 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@maker/material-library": "workspace:*"
+    "@maker/core-image": "workspace:*",
+    "@maker/material-library": "workspace:*",
+    "onnxruntime-node": "^1.20.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
