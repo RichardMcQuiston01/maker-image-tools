@@ -29,6 +29,7 @@ import { HeightmapPanel } from "./components/HeightmapPanel";
 import { GeneratorsPanel } from "./components/GeneratorsPanel";
 import { BackgroundRemovalPanel } from "./components/BackgroundRemovalPanel";
 import { UpscalePanel } from "./components/UpscalePanel";
+import { AutoCropPanel } from "./components/AutoCropPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -211,6 +212,7 @@ export function App() {
             <div className="ai-section">
               <BackgroundRemovalPanel image={image} onProcessed={handleImageProcessed} />
               <UpscalePanel image={image} onProcessed={handleImageProcessed} />
+              <AutoCropPanel image={image} onProcessed={handleImageProcessed} />
             </div>
 
             <div className="vector-section">
