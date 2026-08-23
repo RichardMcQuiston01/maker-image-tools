@@ -30,6 +30,7 @@ import { GeneratorsPanel } from "./components/GeneratorsPanel";
 import { BackgroundRemovalPanel } from "./components/BackgroundRemovalPanel";
 import { UpscalePanel } from "./components/UpscalePanel";
 import { AutoCropPanel } from "./components/AutoCropPanel";
+import { MaterialDetectionPanel } from "./components/MaterialDetectionPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -213,6 +214,7 @@ export function App() {
               <BackgroundRemovalPanel image={image} onProcessed={handleImageProcessed} />
               <UpscalePanel image={image} onProcessed={handleImageProcessed} />
               <AutoCropPanel image={image} onProcessed={handleImageProcessed} />
+              <MaterialDetectionPanel image={image} />
             </div>
 
             <div className="vector-section">
