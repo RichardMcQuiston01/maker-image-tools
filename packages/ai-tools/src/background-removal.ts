@@ -22,6 +22,13 @@ export interface LoadBackgroundRemovalModelOptions {
   wasmPaths?: string;
 }
 
+export interface SaliencyMask {
+  /** Row-major foreground-probability values in [0, 1], one per pixel of the source image. */
+  values: Float32Array;
+  width: number;
+  height: number;
+}
+
 export interface BackgroundRemovalModel {
   /**
    * Removes the background from `image`, returning a same-size ImageData
@@ -29,6 +36,13 @@ export interface BackgroundRemovalModel {
    * predicted foreground mask).
    */
   removeBackground(image: ImageData): Promise<ImageData>;
+  /**
+   * Runs the same underlying saliency model as `removeBackground` but
+   * returns the raw upsampled mask instead of compositing it into an image —
+   * useful for anything that just needs to know *where* the subject is (e.g.
+   * auto-crop) without paying for a full alpha-composite pass.
+   */
+  computeSaliencyMask(image: ImageData): Promise<SaliencyMask>;
 }
 
 function preprocess(image: ImageData): ort.Tensor {
@@ -113,23 +127,31 @@ export async function loadBackgroundRemovalModel(
           model instanceof Uint8Array ? model : new Uint8Array(model),
           { executionProviders },
         );
-  const inputName = session.inputNames[0];
-  const outputName = session.outputNames[0];
-  if (!inputName || !outputName) {
+  const rawInputName = session.inputNames[0];
+  const rawOutputName = session.outputNames[0];
+  if (!rawInputName || !rawOutputName) {
     throw new Error("Background removal model has no input/output names");
+  }
+  const inputName: string = rawInputName;
+  const outputName: string = rawOutputName;
+
+  async function computeSaliencyMask(image: ImageData): Promise<SaliencyMask> {
+    const tensor = preprocess(image);
+    const results = await session.run({ [inputName]: tensor });
+    const output = results[outputName];
+    if (!output) {
+      throw new Error(`Background removal model did not produce output "${outputName}"`);
+    }
+
+    const mask = normalizeMask(output.data as Float32Array);
+    const values = upsampleMask(mask, image.width, image.height);
+    return { values, width: image.width, height: image.height };
   }
 
   return {
+    computeSaliencyMask,
     async removeBackground(image: ImageData): Promise<ImageData> {
-      const tensor = preprocess(image);
-      const results = await session.run({ [inputName]: tensor });
-      const output = results[outputName];
-      if (!output) {
-        throw new Error(`Background removal model did not produce output "${outputName}"`);
-      }
-
-      const mask = normalizeMask(output.data as Float32Array);
-      const upsampled = upsampleMask(mask, image.width, image.height);
+      const { values: upsampled } = await computeSaliencyMask(image);
 
       const result = createImageData(image.width, image.height);
       const srcData = image.data;
