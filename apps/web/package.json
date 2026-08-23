@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@maker/ai-tools": "workspace:*",
     "@maker/core-image": "workspace:*",
     "@maker/core-vector": "workspace:*",
     "@maker/gcode": "workspace:*",

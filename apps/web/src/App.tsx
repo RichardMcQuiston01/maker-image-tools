@@ -27,6 +27,8 @@ import { NestingPreview } from "./components/NestingPreview";
 import { MachinePanel } from "./components/MachinePanel";
 import { HeightmapPanel } from "./components/HeightmapPanel";
 import { GeneratorsPanel } from "./components/GeneratorsPanel";
+import { BackgroundRemovalPanel } from "./components/BackgroundRemovalPanel";
+import { UpscalePanel } from "./components/UpscalePanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -73,6 +75,11 @@ export function App() {
     },
     [filterRegistry, image],
   );
+
+  const handleImageProcessed = useCallback((processed: ImageData) => {
+    setImage(processed);
+    setError(null);
+  }, []);
 
   const handleReset = useCallback(() => {
     setImage(originalImage);
@@ -199,6 +206,11 @@ export function App() {
                 )}
               </div>
               <FilterPanel onApply={handleApplyFilter} disabled={!image} />
+            </div>
+
+            <div className="ai-section">
+              <BackgroundRemovalPanel image={image} onProcessed={handleImageProcessed} />
+              <UpscalePanel image={image} onProcessed={handleImageProcessed} />
             </div>
 
             <div className="vector-section">

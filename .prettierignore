@@ -4,3 +4,8 @@ coverage
 node_modules
 bun.lock
 bun.lockb
+
+# Vendored third-party model files — left byte-for-byte as distributed.
+packages/ai-tools/models/*.onnx
+apps/web/public/models/**/model.json
+apps/web/public/models/**/*.bin
