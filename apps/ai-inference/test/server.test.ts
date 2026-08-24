@@ -52,4 +52,37 @@ describe("ai-inference server", () => {
     const response = await fetch(`${baseUrl}/nope`, { method: "POST" });
     expect(response.status).toBe(404);
   });
+
+  it("generates a placeholder image via POST /generate-image", async () => {
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "a red bicycle", width: 8, height: 8 }),
+    });
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.width).toBe(8);
+    expect(json.height).toBe(8);
+    expect(typeof json.notes).toBe("string");
+    const bytes = Buffer.from(json.dataBase64, "base64");
+    expect(bytes.length).toBe(8 * 8 * 4);
+  });
+
+  it("rejects a /generate-image request missing a prompt", async () => {
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a /generate-image request with invalid JSON", async () => {
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(response.status).toBe(400);
+  });
 });
