@@ -32,6 +32,7 @@ import { UpscalePanel } from "./components/UpscalePanel";
 import { AutoCropPanel } from "./components/AutoCropPanel";
 import { MaterialDetectionPanel } from "./components/MaterialDetectionPanel";
 import { DepthMapPanel } from "./components/DepthMapPanel";
+import { ImageGenerationPanel } from "./components/ImageGenerationPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -217,6 +218,7 @@ export function App() {
               <AutoCropPanel image={image} onProcessed={handleImageProcessed} />
               <MaterialDetectionPanel image={image} />
               <DepthMapPanel image={image} />
+              <ImageGenerationPanel onProcessed={handleImageProcessed} />
             </div>
 
             <div className="vector-section">

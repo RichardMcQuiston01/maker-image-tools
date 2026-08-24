@@ -6,6 +6,11 @@ import {
 import { join } from "node:path";
 import { classifyMaterial } from "./classify.js";
 import { loadDepthModel, type DepthModel } from "./depth.js";
+import {
+  generateImage,
+  InvalidDimensionError,
+  type GenerateImageOptions,
+} from "./generate-image.js";
 import { decodeRgbaImage, encodeDepthMap } from "./wire-image.js";
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -96,6 +101,56 @@ export function createServer() {
               ? 413
               : message.includes("header") || message.includes("too short")
                 ? 400
+                : 500;
+          sendJson(res, status, { error: message });
+        });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/generate-image") {
+      readBody(req)
+        .then(async (body) => {
+          if (body.length === 0) {
+            sendJson(res, 400, { error: "Request body is empty" });
+            return;
+          }
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(Buffer.from(body).toString("utf-8"));
+          } catch {
+            sendJson(res, 400, { error: "Request body is not valid JSON" });
+            return;
+          }
+          const prompt = (parsed as { prompt?: unknown } | null)?.prompt;
+          if (typeof prompt !== "string" || prompt.length === 0) {
+            sendJson(res, 400, { error: '"prompt" must be a non-empty string' });
+            return;
+          }
+          const rawWidth = (parsed as { width?: unknown }).width;
+          const rawHeight = (parsed as { height?: unknown }).height;
+          const options: GenerateImageOptions = {};
+          if (typeof rawWidth === "number") options.width = rawWidth;
+          if (typeof rawHeight === "number") options.height = rawHeight;
+
+          const result = await generateImage(prompt, options);
+          sendJson(res, 200, {
+            width: result.width,
+            height: result.height,
+            dataBase64: Buffer.from(
+              result.data.buffer,
+              result.data.byteOffset,
+              result.data.byteLength,
+            ).toString("base64"),
+            notes: result.notes,
+          });
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : "Internal error";
+          const status =
+            err instanceof InvalidDimensionError
+              ? 400
+              : message === "Request body too large"
+                ? 413
                 : 500;
           sendJson(res, status, { error: message });
         });
