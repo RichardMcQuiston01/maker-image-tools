@@ -6,7 +6,11 @@ import {
 import { join } from "node:path";
 import { classifyMaterial } from "./classify.js";
 import { loadDepthModel, type DepthModel } from "./depth.js";
-import { generateImage, type GenerateImageOptions } from "./generate-image.js";
+import {
+  generateImage,
+  InvalidDimensionError,
+  type GenerateImageOptions,
+} from "./generate-image.js";
 import { decodeRgbaImage, encodeDepthMap } from "./wire-image.js";
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -142,7 +146,13 @@ export function createServer() {
         })
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : "Internal error";
-          sendJson(res, message === "Request body too large" ? 413 : 500, { error: message });
+          const status =
+            err instanceof InvalidDimensionError
+              ? 400
+              : message === "Request body too large"
+                ? 413
+                : 500;
+          sendJson(res, status, { error: message });
         });
       return;
     }

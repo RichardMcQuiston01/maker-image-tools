@@ -121,4 +121,22 @@ describe("ai-inference server", () => {
     });
     expect(response.status).toBe(400);
   });
+
+  it("rejects a /generate-image request with an oversized dimension", async () => {
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "x", width: 100000, height: 8 }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a /generate-image request with a fractional dimension", async () => {
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "x", width: 8.5, height: 8 }),
+    });
+    expect(response.status).toBe(400);
+  });
 });

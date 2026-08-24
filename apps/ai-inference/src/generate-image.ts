@@ -13,6 +13,19 @@ export interface GeneratedImage {
 }
 
 const DEFAULT_SIZE = 512;
+const MAX_DIMENSION = 2048;
+
+/** Thrown for a caller-supplied width/height that's not a finite positive integer within MAX_DIMENSION. */
+export class InvalidDimensionError extends Error {}
+
+function validateDimension(name: "width" | "height", value: number): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new InvalidDimensionError(`"${name}" must be a positive integer`);
+  }
+  if (value > MAX_DIMENSION) {
+    throw new InvalidDimensionError(`"${name}" must be at most ${MAX_DIMENSION}`);
+  }
+}
 
 /** Simple deterministic string hash (FNV-1a), used only to vary the stub's placeholder pattern per prompt. */
 function hashString(input: string): number {
@@ -57,6 +70,8 @@ export async function generateImage(
 ): Promise<GeneratedImage> {
   const width = options?.width ?? DEFAULT_SIZE;
   const height = options?.height ?? DEFAULT_SIZE;
+  validateDimension("width", width);
+  validateDimension("height", height);
   const hash = hashString(prompt);
   const hue1 = hash % 360;
   const hue2 = (hash >>> 8) % 360;

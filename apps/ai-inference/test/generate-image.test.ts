@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateImage } from "../src/generate-image.js";
+import { generateImage, InvalidDimensionError } from "../src/generate-image.js";
 
 describe("generateImage", () => {
   it("returns a placeholder image at the requested size and discloses stub mode", async () => {
@@ -37,5 +37,26 @@ describe("generateImage", () => {
     for (let i = 3; i < result.data.length; i += 4) {
       expect(result.data[i]).toBe(255);
     }
+  });
+
+  it("rejects a fractional dimension", async () => {
+    await expect(generateImage("x", { width: 8.5, height: 8 })).rejects.toThrow(
+      InvalidDimensionError,
+    );
+  });
+
+  it("rejects a zero or negative dimension", async () => {
+    await expect(generateImage("x", { width: 0, height: 8 })).rejects.toThrow(
+      InvalidDimensionError,
+    );
+    await expect(generateImage("x", { width: 8, height: -1 })).rejects.toThrow(
+      InvalidDimensionError,
+    );
+  });
+
+  it("rejects a dimension above the maximum", async () => {
+    await expect(generateImage("x", { width: 100000, height: 8 })).rejects.toThrow(
+      InvalidDimensionError,
+    );
   });
 });
