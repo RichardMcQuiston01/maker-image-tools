@@ -3,10 +3,25 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { join } from "node:path";
 import { classifyMaterial } from "./classify.js";
+import { loadDepthModel, type DepthModel } from "./depth.js";
 import { generateImage, type GenerateImageOptions } from "./generate-image.js";
+import { decodeRgbaImage, encodeDepthMap } from "./wire-image.js";
 
-const MAX_BODY_BYTES = 10 * 1024 * 1024;
+const MAX_BODY_BYTES = 64 * 1024 * 1024;
+const DEPTH_MODEL_PATH = join(process.cwd(), "models", "midas-v21-small.onnx");
+
+// Loading the ONNX session takes real time, so it's created once, lazily, on
+// the first /depth-map request rather than on every server start (which
+// would also slow down tests that never exercise this route).
+let depthModelPromise: Promise<DepthModel> | null = null;
+function getDepthModel(): Promise<DepthModel> {
+  if (!depthModelPromise) {
+    depthModelPromise = loadDepthModel(DEPTH_MODEL_PATH);
+  }
+  return depthModelPromise;
+}
 
 function setCorsHeaders(res: ServerResponse): void {
   // Wide open for local/dev use; a real deployment would restrict this to
@@ -57,6 +72,33 @@ export function createServer() {
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : "Internal error";
           sendJson(res, message === "Request body too large" ? 413 : 500, { error: message });
+        });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/depth-map") {
+      readBody(req)
+        .then(async (body) => {
+          if (body.length === 0) {
+            sendJson(res, 400, { error: "Request body is empty" });
+            return;
+          }
+          const image = decodeRgbaImage(body);
+          const model = await getDepthModel();
+          const depth = await model.estimateDepth(image);
+          const encoded = encodeDepthMap(depth);
+          res.writeHead(200, { "Content-Type": "application/octet-stream" });
+          res.end(Buffer.from(encoded));
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : "Internal error";
+          const status =
+            message === "Request body too large"
+              ? 413
+              : message.includes("header") || message.includes("too short")
+                ? 400
+                : 500;
+          sendJson(res, status, { error: message });
         });
       return;
     }
