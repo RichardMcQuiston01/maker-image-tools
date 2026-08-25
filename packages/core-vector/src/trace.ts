@@ -32,15 +32,35 @@ interface Component {
   pixelCount: number;
 }
 
+export interface TraceMaskOptions {
+  /** Connected foreground components smaller than this many pixels are discarded. Default 2. */
+  minRegionSize?: number;
+  /** Douglas-Peucker simplification tolerance, in pixels. Default 1.0. */
+  simplifyTolerance?: number;
+}
+
 /** Trace foreground regions of a raster image into closed vector outlines. */
 export function traceImage(image: ImageData, options: TraceOptions = {}): VectorPath[] {
   const threshold = options.threshold ?? DEFAULT_THRESHOLD;
+  const foreground = binarize(image, threshold);
+  return traceMask(foreground, image.width, image.height, options);
+}
+
+/**
+ * Traces the foreground (1) regions of a binary mask into closed vector
+ * outlines. Shared by `traceImage` (mask = a luma threshold) and multi-color
+ * tracing (mask = "does this pixel belong to color cluster K").
+ */
+export function traceMask(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  options: TraceMaskOptions = {},
+): VectorPath[] {
   const minRegionSize = options.minRegionSize ?? DEFAULT_MIN_REGION_SIZE;
   const simplifyTolerance = options.simplifyTolerance ?? DEFAULT_SIMPLIFY_TOLERANCE;
 
-  const { width, height } = image;
-  const foreground = binarize(image, threshold);
-  const { labels, components } = findComponents(foreground, width, height);
+  const { labels, components } = findComponents(mask, width, height);
 
   const paths: VectorPath[] = [];
   for (const component of components) {
