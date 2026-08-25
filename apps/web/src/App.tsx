@@ -9,6 +9,7 @@ import {
   textToPaths,
   traceImage,
   updateLayer,
+  type ColorLayer,
   type LayerSettings,
   type NestResult,
   type VectorDocument,
@@ -33,6 +34,7 @@ import { AutoCropPanel } from "./components/AutoCropPanel";
 import { MaterialDetectionPanel } from "./components/MaterialDetectionPanel";
 import { DepthMapPanel } from "./components/DepthMapPanel";
 import { ImageGenerationPanel } from "./components/ImageGenerationPanel";
+import { VectorizeColorsPanel } from "./components/VectorizeColorsPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -144,6 +146,26 @@ export function App() {
     setVectorDoc((doc) => addLayer(doc, { name: `Layer ${doc.layers.length + 1}` }));
   }, []);
 
+  const handleAddColorLayers = useCallback(
+    (layers: Array<{ colorHex: string; paths: ColorLayer["paths"] }>) => {
+      setVectorDoc((doc) => {
+        let next = doc;
+        for (const layer of layers) {
+          next = addLayer(next, {
+            name: `Color ${next.layers.length + 1}`,
+            color: layer.colorHex,
+          });
+          const layerId = next.layers[next.layers.length - 1]!.id;
+          for (const path of layer.paths) {
+            next = addObject(next, path, layerId);
+          }
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   const handleUpdateLayer = useCallback((layerId: string, changes: Partial<LayerSettings>) => {
     setVectorDoc((doc) => updateLayer(doc, layerId, changes));
   }, []);
@@ -219,6 +241,7 @@ export function App() {
               <MaterialDetectionPanel image={image} />
               <DepthMapPanel image={image} />
               <ImageGenerationPanel onProcessed={handleImageProcessed} />
+              <VectorizeColorsPanel image={image} onAddColorLayers={handleAddColorLayers} />
             </div>
 
             <div className="vector-section">

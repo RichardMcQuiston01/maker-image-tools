@@ -2,6 +2,8 @@ export * from "./types.js";
 export * from "./geometry.js";
 export * from "./svg.js";
 export * from "./trace.js";
+export * from "./color-quantize.js";
+export * from "./multicolor-trace.js";
 export * from "./dxf.js";
 export * from "./text.js";
 export * from "./document.js";
