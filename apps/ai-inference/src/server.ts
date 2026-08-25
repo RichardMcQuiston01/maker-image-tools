@@ -11,7 +11,20 @@ import {
   InvalidDimensionError,
   type GenerateImageOptions,
 } from "./generate-image.js";
+import { GeminiApiError, GeminiConfigError } from "./gemini-client.js";
 import { decodeRgbaImage, encodeDepthMap } from "./wire-image.js";
+
+/**
+ * Maps an error from a Gemini-backed route to an HTTP status: a missing/bad
+ * API key is a server misconfiguration (500), an upstream Gemini failure is
+ * a bad gateway (502), everything else falls through to the caller's own
+ * status mapping.
+ */
+function geminiErrorStatus(err: unknown): number | undefined {
+  if (err instanceof GeminiConfigError) return 500;
+  if (err instanceof GeminiApiError) return 502;
+  return undefined;
+}
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 const DEPTH_MODEL_PATH = join(process.cwd(), "models", "midas-v21-small.onnx");
@@ -75,7 +88,9 @@ export function createServer() {
         })
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : "Internal error";
-          sendJson(res, message === "Request body too large" ? 413 : 500, { error: message });
+          const status =
+            geminiErrorStatus(err) ?? (message === "Request body too large" ? 413 : 500);
+          sendJson(res, status, { error: message });
         });
       return;
     }
@@ -149,9 +164,7 @@ export function createServer() {
           const status =
             err instanceof InvalidDimensionError
               ? 400
-              : message === "Request body too large"
-                ? 413
-                : 500;
+              : (geminiErrorStatus(err) ?? (message === "Request body too large" ? 413 : 500));
           sendJson(res, status, { error: message });
         });
       return;

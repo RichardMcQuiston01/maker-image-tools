@@ -43,9 +43,8 @@ export function MaterialDetectionPanel({ image }: MaterialDetectionPanelProps) {
     <section className="ai-panel">
       <h2>AI Material Detection</h2>
       <p className="ai-panel__hint">
-        Calls the @maker/ai-inference backend to identify the material in this image and suggest
-        matching cut/engrave presets. Currently a scaffold: the backend reports "unknown" until a
-        real hosted vision model is wired up.
+        Calls the @maker/ai-inference backend (Gemini vision) to identify the material in this image
+        and suggest matching cut/engrave presets.
       </p>
       {error && (
         <p role="alert" className="ai-panel__error">
