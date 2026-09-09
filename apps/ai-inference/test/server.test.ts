@@ -1,11 +1,43 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
+import { PNG } from "pngjs";
 import { createServer } from "../src/server.js";
 import { decodeDepthMap, encodeRgbaImage } from "../src/wire-image.js";
+
+const originalFetch = global.fetch;
+
+/**
+ * /classify-material and /generate-image call the real Gemini API, which
+ * needs a paid key this sandbox doesn't have. These tests mock only requests
+ * to Gemini's endpoint and pass everything else (notably the test's own
+ * calls to the local `baseUrl` server, which share the same global `fetch`)
+ * through to the real implementation.
+ */
+function mockGeminiFetch(buildResponse: () => Response) {
+  global.fetch = vi.fn((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("generativelanguage.googleapis.com")) {
+      return Promise.resolve(buildResponse());
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+}
+
+function pngBase64(width: number, height: number, rgb: [number, number, number]): string {
+  const png = new PNG({ width, height });
+  for (let i = 0; i < width * height; i++) {
+    png.data[i * 4] = rgb[0];
+    png.data[i * 4 + 1] = rgb[1];
+    png.data[i * 4 + 2] = rgb[2];
+    png.data[i * 4 + 3] = 255;
+  }
+  return PNG.sync.write(png).toString("base64");
+}
 
 describe("ai-inference server", () => {
   let server: Server;
   let baseUrl: string;
+  const originalApiKey = process.env.GEMINI_API_KEY;
 
   beforeAll(async () => {
     server = createServer();
@@ -21,8 +53,31 @@ describe("ai-inference server", () => {
     server.close();
   });
 
+  afterEach(() => {
+    global.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = originalApiKey;
+  });
+
   it("classifies an uploaded image via POST /classify-material", async () => {
-    const body = new Uint8Array([137, 80, 78, 71]); // arbitrary bytes; the stub doesn't inspect content
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGeminiFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: JSON.stringify({ material: "unknown", confidence: 0 }) }],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const body = new Uint8Array([137, 80, 78, 71]);
     const response = await fetch(`${baseUrl}/classify-material`, {
       method: "POST",
       headers: { "Content-Type": "image/png" },
@@ -41,6 +96,18 @@ describe("ai-inference server", () => {
       body: new Uint8Array(0),
     });
     expect(response.status).toBe(400);
+  });
+
+  it("returns 500 for /classify-material when GEMINI_API_KEY is unset", async () => {
+    delete process.env.GEMINI_API_KEY;
+    const response = await fetch(`${baseUrl}/classify-material`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([1, 2, 3, 4]),
+    });
+    expect(response.status).toBe(500);
+    const json = await response.json();
+    expect(json.error).toMatch(/GEMINI_API_KEY/);
   });
 
   it("answers CORS preflight requests", async () => {
@@ -89,7 +156,31 @@ describe("ai-inference server", () => {
     expect(response.status).toBe(400);
   });
 
-  it("generates a placeholder image via POST /generate-image", async () => {
+  it("generates an image via POST /generate-image", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGeminiFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType: "image/png",
+                        data: pngBase64(8, 8, [200, 50, 50]),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+
     const response = await fetch(`${baseUrl}/generate-image`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,6 +193,18 @@ describe("ai-inference server", () => {
     expect(typeof json.notes).toBe("string");
     const bytes = Buffer.from(json.dataBase64, "base64");
     expect(bytes.length).toBe(8 * 8 * 4);
+  });
+
+  it("returns 500 for /generate-image when GEMINI_API_KEY is unset", async () => {
+    delete process.env.GEMINI_API_KEY;
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "x", width: 8, height: 8 }),
+    });
+    expect(response.status).toBe(500);
+    const json = await response.json();
+    expect(json.error).toMatch(/GEMINI_API_KEY/);
   });
 
   it("rejects a /generate-image request missing a prompt", async () => {

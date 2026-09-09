@@ -62,9 +62,7 @@ export function ImageGenerationPanel({ onProcessed }: ImageGenerationPanelProps)
     <section className="ai-panel">
       <h2>AI Image Generation</h2>
       <p className="ai-panel__hint">
-        Generates an image from a text prompt via @maker/ai-inference. Currently a scaffold: the
-        backend returns a deterministic placeholder gradient until a real diffusion model or hosted
-        API is wired up.
+        Generates an image from a text prompt via @maker/ai-inference (Gemini image generation).
       </p>
       <label>
         Prompt
