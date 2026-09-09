@@ -12,6 +12,7 @@ import {
   type GenerateImageOptions,
 } from "./generate-image.js";
 import { GeminiApiError, GeminiConfigError } from "./gemini-client.js";
+import { suggestColorPalette, type SuggestColorPaletteOptions } from "./segment.js";
 import { decodeRgbaImage, encodeDepthMap } from "./wire-image.js";
 
 /**
@@ -75,6 +76,10 @@ export function createServer() {
       res.end();
       return;
     }
+
+    // Only /suggest-palette takes a query parameter today; every other route matches on the
+    // full req.url exactly as before, which pathname equals whenever there's no query string.
+    const [pathname = "", queryString = ""] = (req.url ?? "").split("?", 2);
 
     if (req.method === "POST" && req.url === "/classify-material") {
       readBody(req)
@@ -165,6 +170,35 @@ export function createServer() {
             err instanceof InvalidDimensionError
               ? 400
               : (geminiErrorStatus(err) ?? (message === "Request body too large" ? 413 : 500));
+          sendJson(res, status, { error: message });
+        });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/suggest-palette") {
+      readBody(req)
+        .then(async (image) => {
+          if (image.length === 0) {
+            sendJson(res, 400, { error: "Request body is empty" });
+            return;
+          }
+          const options: SuggestColorPaletteOptions = {};
+          const colorCountRaw = new URLSearchParams(queryString).get("colorCount");
+          if (colorCountRaw !== null) {
+            const colorCount = Number(colorCountRaw);
+            if (!Number.isFinite(colorCount)) {
+              sendJson(res, 400, { error: '"colorCount" must be a number' });
+              return;
+            }
+            options.colorCount = colorCount;
+          }
+          const result = await suggestColorPalette(image, options);
+          sendJson(res, 200, result);
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : "Internal error";
+          const status =
+            geminiErrorStatus(err) ?? (message === "Request body too large" ? 413 : 500);
           sendJson(res, status, { error: message });
         });
       return;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quantizeColors } from "../src/color-quantize.js";
+import { assignColorLabels, quantizeColors } from "../src/color-quantize.js";
 
 function makeImage(
   width: number,
@@ -67,5 +67,43 @@ describe("quantizeColors", () => {
     const image = makeImage(8, 8, (x, y) => [x * 10, y * 10, 0]);
     const { palette } = quantizeColors(image, { colorCount: 1_000_000 });
     expect(palette.length).toBeLessThanOrEqual(64);
+  });
+});
+
+describe("assignColorLabels", () => {
+  it("labels each pixel to its exact match in an explicit palette", () => {
+    const image = makeImage(30, 10, (x) => {
+      if (x < 10) return [255, 0, 0];
+      if (x < 20) return [0, 255, 0];
+      return [0, 0, 255];
+    });
+    const palette: Array<[number, number, number]> = [
+      [255, 0, 0],
+      [0, 255, 0],
+      [0, 0, 255],
+    ];
+    const labels = assignColorLabels(image, palette);
+
+    for (let x = 0; x < image.width; x++) {
+      const expected = x < 10 ? 0 : x < 20 ? 1 : 2;
+      expect(labels[x]).toBe(expected);
+    }
+  });
+
+  it("assigns each pixel to its nearest palette color when there's no exact match", () => {
+    const image = makeImage(2, 1, (x) => (x === 0 ? [10, 10, 10] : [240, 240, 240]));
+    const palette: Array<[number, number, number]> = [
+      [0, 0, 0],
+      [255, 255, 255],
+    ];
+    const labels = assignColorLabels(image, palette);
+    expect(labels[0]).toBe(0);
+    expect(labels[1]).toBe(1);
+  });
+
+  it("returns an all-zero label array for an empty palette", () => {
+    const image = makeImage(2, 2, () => [1, 2, 3]);
+    const labels = assignColorLabels(image, []);
+    expect(Array.from(labels)).toEqual([0, 0, 0, 0]);
   });
 });

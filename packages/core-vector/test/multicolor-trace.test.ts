@@ -55,4 +55,37 @@ describe("traceImageColors", () => {
     const layers = traceImageColors(image, { colorCount: 6 });
     expect(layers.length).toBeLessThanOrEqual(2);
   });
+
+  it("traces against an explicit palette instead of deriving one via quantization", () => {
+    const image = makeSideBySideImage(40, 20, 20);
+    // Slightly off from the image's true colors — assignColorLabels should still snap each
+    // pixel to its nearest entry, and the layer's reported color is the palette entry itself,
+    // not the image's original color.
+    const layers = traceImageColors(image, {
+      palette: [
+        [210, 20, 20],
+        [20, 20, 210],
+      ],
+    });
+
+    expect(layers.length).toBe(2);
+    const colors = layers.map((l) => l.color.join(","));
+    expect(colors).toContain("210,20,20");
+    expect(colors).toContain("20,20,210");
+    for (const layer of layers) {
+      expect(layer.paths.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("ignores colorCount when an explicit palette is given", () => {
+    const image = makeSideBySideImage(40, 20, 20);
+    const layers = traceImageColors(image, {
+      colorCount: 6,
+      palette: [
+        [200, 30, 30],
+        [30, 30, 200],
+      ],
+    });
+    expect(layers.length).toBe(2);
+  });
 });
