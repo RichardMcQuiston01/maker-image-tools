@@ -242,4 +242,93 @@ describe("ai-inference server", () => {
     });
     expect(response.status).toBe(400);
   });
+
+  it("suggests a color palette for an uploaded image via POST /suggest-palette", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGeminiFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: { parts: [{ text: JSON.stringify({ colors: ["#ff0000", "#00ff00"] }) }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const body = new Uint8Array([137, 80, 78, 71]);
+    const response = await fetch(`${baseUrl}/suggest-palette`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body,
+    });
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.palette).toEqual([
+      [255, 0, 0],
+      [0, 255, 0],
+    ]);
+    expect(typeof json.notes).toBe("string");
+  });
+
+  it("respects a colorCount query parameter on /suggest-palette", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGeminiFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: JSON.stringify({ colors: ["#ff0000", "#00ff00", "#0000ff"] }) }],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const response = await fetch(`${baseUrl}/suggest-palette?colorCount=2`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([137, 80, 78, 71]),
+    });
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.palette).toHaveLength(2);
+  });
+
+  it("rejects a non-numeric colorCount query parameter on /suggest-palette", async () => {
+    const response = await fetch(`${baseUrl}/suggest-palette?colorCount=nope`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([137, 80, 78, 71]),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an empty body on /suggest-palette with 400", async () => {
+    const response = await fetch(`${baseUrl}/suggest-palette`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array(0),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 500 for /suggest-palette when GEMINI_API_KEY is unset", async () => {
+    delete process.env.GEMINI_API_KEY;
+    const response = await fetch(`${baseUrl}/suggest-palette`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([137, 80, 78, 71]),
+    });
+    expect(response.status).toBe(500);
+    const json = await response.json();
+    expect(json.error).toMatch(/GEMINI_API_KEY/);
+  });
 });

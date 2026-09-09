@@ -144,6 +144,45 @@ function splitBucket(
   return [{ pixelIndices: left }, { pixelIndices: right }];
 }
 
+/**
+ * Assigns each pixel to the nearest color in a caller-supplied palette
+ * (squared Euclidean RGB distance), rather than deriving the palette from
+ * the image itself the way `quantizeColors` does. Used when the palette
+ * comes from somewhere else — e.g. an AI-suggested set of "meaningful"
+ * colors for `traceImageColors`'s `palette` option — while reusing the same
+ * per-pixel labeling contract (`Uint8Array` of palette indices) that
+ * `traceMask`-based tracing already expects.
+ */
+export function assignColorLabels(image: ImageData, palette: RgbColor[]): Uint8Array {
+  const { width, height, data } = image;
+  const pixelCount = width * height;
+  const labels = new Uint8Array(pixelCount);
+  if (palette.length === 0) return labels;
+
+  for (let p = 0; p < pixelCount; p++) {
+    const r = data[p * 4] ?? 0;
+    const g = data[p * 4 + 1] ?? 0;
+    const b = data[p * 4 + 2] ?? 0;
+
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    for (let i = 0; i < palette.length; i++) {
+      const [pr, pg, pb] = palette[i] as RgbColor;
+      const dr = r - pr;
+      const dg = g - pg;
+      const db = b - pb;
+      const distance = dr * dr + dg * dg + db * db;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    labels[p] = bestIndex;
+  }
+
+  return labels;
+}
+
 function averageColor(bucket: Bucket, r: Uint8Array, g: Uint8Array, b: Uint8Array): RgbColor {
   let sumR = 0;
   let sumG = 0;
