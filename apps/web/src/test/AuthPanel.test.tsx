@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AuthPanel } from "../components/AuthPanel";
+import { AuthProvider } from "../hooks/AuthContext";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -20,7 +21,11 @@ describe("AuthPanel", () => {
   });
 
   it("renders signed-out with a login form by default", async () => {
-    render(<AuthPanel />);
+    render(
+      <AuthProvider>
+        <AuthPanel />
+      </AuthProvider>,
+    );
 
     expect(await screen.findByPlaceholderText("Email")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Password")).toBeInTheDocument();
@@ -41,7 +46,11 @@ describe("AuthPanel", () => {
       }),
     );
 
-    render(<AuthPanel />);
+    render(
+      <AuthProvider>
+        <AuthPanel />
+      </AuthProvider>,
+    );
 
     fireEvent.change(await screen.findByPlaceholderText("Email"), {
       target: { value: "ada@example.com" },
@@ -64,7 +73,11 @@ describe("AuthPanel", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: "Invalid email or password" }));
 
-    render(<AuthPanel />);
+    render(
+      <AuthProvider>
+        <AuthPanel />
+      </AuthProvider>,
+    );
 
     fireEvent.change(await screen.findByPlaceholderText("Email"), {
       target: { value: "ada@example.com" },
@@ -91,7 +104,11 @@ describe("AuthPanel", () => {
       }),
     );
 
-    render(<AuthPanel />);
+    render(
+      <AuthProvider>
+        <AuthPanel />
+      </AuthProvider>,
+    );
 
     fireEvent.click(await screen.findByRole("button", { name: /Need an account/ }));
     fireEvent.change(screen.getByPlaceholderText("Email"), {
@@ -122,7 +139,11 @@ describe("AuthPanel", () => {
     );
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
-    render(<AuthPanel />);
+    render(
+      <AuthProvider>
+        <AuthPanel />
+      </AuthProvider>,
+    );
 
     expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
     expect(fetchMock.mock.calls[0]![0]).toContain("/me");
@@ -140,7 +161,11 @@ describe("AuthPanel", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    render(<AuthPanel />);
+    render(
+      <AuthProvider>
+        <AuthPanel />
+      </AuthProvider>,
+    );
 
     expect(await screen.findByPlaceholderText("Email")).toBeInTheDocument();
     expect(window.localStorage.getItem("maker.accounts.token")).toBeNull();

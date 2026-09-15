@@ -5,25 +5,40 @@ import { getAllPresets } from "@maker/material-library";
 
 interface GcodePanelProps {
   paths: VectorPath[];
+  feedRate: number;
+  power: number;
+  passes: number;
+  onFeedRateChange: (feedRate: number) => void;
+  onPowerChange: (power: number) => void;
+  onPassesChange: (passes: number) => void;
   onGenerate: (gcode: string) => void;
 }
 
 const MATERIAL_PRESETS = getAllPresets();
 
-export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
-  const [feedRate, setFeedRate] = useState(1000);
-  const [power, setPower] = useState(1000);
-  const [passes, setPasses] = useState(1);
+export function GcodePanel({
+  paths,
+  feedRate,
+  power,
+  passes,
+  onFeedRateChange,
+  onPowerChange,
+  onPassesChange,
+  onGenerate,
+}: GcodePanelProps) {
   const [kerfWidth, setKerfWidth] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const handlePresetChange = useCallback((presetId: string) => {
-    const preset = MATERIAL_PRESETS.find((candidate) => candidate.id === presetId);
-    if (!preset) return;
-    setFeedRate(preset.speed);
-    setPower(preset.power);
-    setPasses(preset.passes ?? 1);
-  }, []);
+  const handlePresetChange = useCallback(
+    (presetId: string) => {
+      const preset = MATERIAL_PRESETS.find((candidate) => candidate.id === presetId);
+      if (!preset) return;
+      onFeedRateChange(preset.speed);
+      onPowerChange(preset.power);
+      onPassesChange(preset.passes ?? 1);
+    },
+    [onFeedRateChange, onPowerChange, onPassesChange],
+  );
 
   const handleGenerate = useCallback(() => {
     if (paths.length === 0) return;
@@ -60,7 +75,7 @@ export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
         <input
           type="number"
           value={feedRate}
-          onChange={(event) => setFeedRate(Number(event.target.value) || 0)}
+          onChange={(event) => onFeedRateChange(Number(event.target.value) || 0)}
         />
       </label>
       <label>
@@ -68,7 +83,7 @@ export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
         <input
           type="number"
           value={power}
-          onChange={(event) => setPower(Number(event.target.value) || 0)}
+          onChange={(event) => onPowerChange(Number(event.target.value) || 0)}
         />
       </label>
       <label>
@@ -77,7 +92,7 @@ export function GcodePanel({ paths, onGenerate }: GcodePanelProps) {
           type="number"
           min={1}
           value={passes}
-          onChange={(event) => setPasses(Math.max(1, Number(event.target.value) || 1))}
+          onChange={(event) => onPassesChange(Math.max(1, Number(event.target.value) || 1))}
         />
       </label>
       <label>

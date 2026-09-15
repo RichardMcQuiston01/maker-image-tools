@@ -36,6 +36,10 @@ import { DepthMapPanel } from "./components/DepthMapPanel";
 import { ImageGenerationPanel } from "./components/ImageGenerationPanel";
 import { VectorizeColorsPanel } from "./components/VectorizeColorsPanel";
 import { AuthPanel } from "./components/AuthPanel";
+import { AuthProvider } from "./hooks/AuthContext";
+import { BillingPanel } from "./components/BillingPanel";
+import { CloudProjectsPanel } from "./components/CloudProjectsPanel";
+import { MaterialDbPanel } from "./components/MaterialDbPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -57,6 +61,9 @@ export function App() {
   const [vectorDoc, setVectorDoc] = useState<VectorDocument>(createInitialDocument);
   const [gcode, setGcode] = useState<string | null>(null);
   const [nesting, setNesting] = useState<NestingState | null>(null);
+  const [feedRate, setFeedRate] = useState(1000);
+  const [gcodePower, setGcodePower] = useState(1000);
+  const [passes, setPasses] = useState(1);
 
   const filterRegistry = useMemo(() => {
     const registry = createFilterRegistry();
@@ -199,121 +206,148 @@ export function App() {
     setNesting({ result, binWidth, binHeight });
   }, []);
 
+  const handleLoadDocument = useCallback((doc: VectorDocument) => {
+    setVectorDoc(doc);
+  }, []);
+
+  const handleApplyPreset = useCallback((speed: number, power: number, presetPasses: number) => {
+    setFeedRate(speed);
+    setGcodePower(power);
+    setPasses(presetPasses);
+  }, []);
+
   const hasVectorObjects = vectorDoc.objects.length > 0;
 
   return (
-    <div className="app">
-      <header className="app__header">
-        <h1>Maker Image Tools</h1>
-        <nav>
-          <a href="#/">Home</a>
-          <a href="#/editor">Editor</a>
-        </nav>
-        <AuthPanel />
-      </header>
+    <AuthProvider>
+      <div className="app">
+        <header className="app__header">
+          <h1>Maker Image Tools</h1>
+          <nav>
+            <a href="#/">Home</a>
+            <a href="#/editor">Editor</a>
+          </nav>
+          <AuthPanel />
+        </header>
 
-      <main className="app__main">
-        {route === "/editor" ? (
-          <>
-            <div className="editor">
-              <DropZone onImageLoaded={handleImageLoaded} />
-              <div className="editor__preview">
-                <CanvasPreview image={image} />
-                <div className="editor__actions">
-                  <button type="button" disabled={!image} onClick={handleReset}>
-                    Reset
-                  </button>
-                  <button type="button" disabled={!image} onClick={() => void handleExport()}>
-                    Export PNG
-                  </button>
+        <main className="app__main">
+          {route === "/editor" ? (
+            <>
+              <div className="account-section">
+                <CloudProjectsPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />
+                <BillingPanel />
+                <MaterialDbPanel onApplyPreset={handleApplyPreset} />
+              </div>
+
+              <div className="editor">
+                <DropZone onImageLoaded={handleImageLoaded} />
+                <div className="editor__preview">
+                  <CanvasPreview image={image} />
+                  <div className="editor__actions">
+                    <button type="button" disabled={!image} onClick={handleReset}>
+                      Reset
+                    </button>
+                    <button type="button" disabled={!image} onClick={() => void handleExport()}>
+                      Export PNG
+                    </button>
+                  </div>
+                  {error && (
+                    <p role="alert" className="editor__error">
+                      {error}
+                    </p>
+                  )}
                 </div>
-                {error && (
-                  <p role="alert" className="editor__error">
-                    {error}
-                  </p>
-                )}
+                <FilterPanel onApply={handleApplyFilter} disabled={!image} />
               </div>
-              <FilterPanel onApply={handleApplyFilter} disabled={!image} />
-            </div>
 
-            <div className="ai-section">
-              <BackgroundRemovalPanel image={image} onProcessed={handleImageProcessed} />
-              <UpscalePanel image={image} onProcessed={handleImageProcessed} />
-              <AutoCropPanel image={image} onProcessed={handleImageProcessed} />
-              <MaterialDetectionPanel image={image} />
-              <DepthMapPanel image={image} />
-              <ImageGenerationPanel onProcessed={handleImageProcessed} />
-              <VectorizeColorsPanel image={image} onAddColorLayers={handleAddColorLayers} />
-            </div>
-
-            <div className="vector-section">
-              <div className="vector-section__preview">
-                <VectorPreview
-                  document={vectorDoc}
-                  width={image?.width ?? 400}
-                  height={image?.height ?? 400}
-                />
-                <div className="editor__actions">
-                  <button type="button" disabled={!image} onClick={handleTraceToVector}>
-                    Trace to Vector
-                  </button>
-                  <button type="button" disabled={!hasVectorObjects} onClick={handleExportSvg}>
-                    Export SVG
-                  </button>
-                  <button type="button" disabled={!hasVectorObjects} onClick={handleExportDxf}>
-                    Export DXF
-                  </button>
-                </div>
+              <div className="ai-section">
+                <BackgroundRemovalPanel image={image} onProcessed={handleImageProcessed} />
+                <UpscalePanel image={image} onProcessed={handleImageProcessed} />
+                <AutoCropPanel image={image} onProcessed={handleImageProcessed} />
+                <MaterialDetectionPanel image={image} />
+                <DepthMapPanel image={image} />
+                <ImageGenerationPanel onProcessed={handleImageProcessed} />
+                <VectorizeColorsPanel image={image} onAddColorLayers={handleAddColorLayers} />
               </div>
-              <div className="vector-section__side">
-                <LayerPanel
-                  document={vectorDoc}
-                  onAddLayer={handleAddLayer}
-                  onUpdateLayer={handleUpdateLayer}
-                />
-                <TextToPathPanel onAddText={handleAddText} />
-              </div>
-            </div>
 
-            <div className="toolpath-section">
-              <div className="toolpath-section__preview">
-                {nesting && (
-                  <NestingPreview
-                    result={nesting.result}
-                    binWidth={nesting.binWidth}
-                    binHeight={nesting.binHeight}
+              <div className="vector-section">
+                <div className="vector-section__preview">
+                  <VectorPreview
+                    document={vectorDoc}
+                    width={image?.width ?? 400}
+                    height={image?.height ?? 400}
                   />
-                )}
-                {gcode && (
-                  <>
-                    <GcodeToolpathPreview gcode={gcode} />
-                    <div className="editor__actions">
-                      <button type="button" onClick={handleDownloadGcode}>
-                        Download .gcode
-                      </button>
-                    </div>
-                  </>
-                )}
+                  <div className="editor__actions">
+                    <button type="button" disabled={!image} onClick={handleTraceToVector}>
+                      Trace to Vector
+                    </button>
+                    <button type="button" disabled={!hasVectorObjects} onClick={handleExportSvg}>
+                      Export SVG
+                    </button>
+                    <button type="button" disabled={!hasVectorObjects} onClick={handleExportDxf}>
+                      Export DXF
+                    </button>
+                  </div>
+                </div>
+                <div className="vector-section__side">
+                  <LayerPanel
+                    document={vectorDoc}
+                    onAddLayer={handleAddLayer}
+                    onUpdateLayer={handleUpdateLayer}
+                  />
+                  <TextToPathPanel onAddText={handleAddText} />
+                </div>
               </div>
-              <div className="toolpath-section__side">
-                <NestingPanel paths={vectorPaths} onNested={handleNested} />
-                <GcodePanel paths={vectorPaths} onGenerate={handleGcodeGenerated} />
-                <MachinePanel gcode={gcode} />
-              </div>
-            </div>
 
-            <div className="advanced-section">
-              <HeightmapPanel image={image} />
-              <GeneratorsPanel onAddPaths={addPathsToFirstLayer} />
-            </div>
-          </>
-        ) : (
-          <p>
-            Stage 0 foundation shell. Head to the <a href="#/editor">editor</a> to try the drop zone
-            and canvas preview.
-          </p>
-        )}
-      </main>
-    </div>
+              <div className="toolpath-section">
+                <div className="toolpath-section__preview">
+                  {nesting && (
+                    <NestingPreview
+                      result={nesting.result}
+                      binWidth={nesting.binWidth}
+                      binHeight={nesting.binHeight}
+                    />
+                  )}
+                  {gcode && (
+                    <>
+                      <GcodeToolpathPreview gcode={gcode} />
+                      <div className="editor__actions">
+                        <button type="button" onClick={handleDownloadGcode}>
+                          Download .gcode
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="toolpath-section__side">
+                  <NestingPanel paths={vectorPaths} onNested={handleNested} />
+                  <GcodePanel
+                    paths={vectorPaths}
+                    feedRate={feedRate}
+                    power={gcodePower}
+                    passes={passes}
+                    onFeedRateChange={setFeedRate}
+                    onPowerChange={setGcodePower}
+                    onPassesChange={setPasses}
+                    onGenerate={handleGcodeGenerated}
+                  />
+                  <MachinePanel gcode={gcode} />
+                </div>
+              </div>
+
+              <div className="advanced-section">
+                <HeightmapPanel image={image} />
+                <GeneratorsPanel onAddPaths={addPathsToFirstLayer} />
+              </div>
+            </>
+          ) : (
+            <p>
+              Stage 0 foundation shell. Head to the <a href="#/editor">editor</a> to try the drop
+              zone and canvas preview.
+            </p>
+          )}
+        </main>
+      </div>
+    </AuthProvider>
   );
 }
