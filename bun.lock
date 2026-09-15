@@ -75,6 +75,20 @@
         "vitest": "^3.0.4",
       },
     },
+    "apps/community-library": {
+      "name": "@maker/community-library",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aws-sdk/client-s3": "^3.716.0",
+        "pg": "^8.13.1",
+      },
+      "devDependencies": {
+        "@types/node": "^22.10.5",
+        "@types/pg": "^8.11.10",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
     "apps/material-db": {
       "name": "@maker/material-db",
       "version": "0.0.0",
@@ -392,6 +406,8 @@
     "@maker/billing": ["@maker/billing@workspace:apps/billing"],
 
     "@maker/cloud-projects": ["@maker/cloud-projects@workspace:apps/cloud-projects"],
+
+    "@maker/community-library": ["@maker/community-library@workspace:apps/community-library"],
 
     "@maker/core-image": ["@maker/core-image@workspace:packages/core-image"],
 
