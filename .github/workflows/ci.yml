@@ -49,9 +49,10 @@ jobs:
           PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_billing_test"
           PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_cloud_projects_test"
           PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_material_db_test"
+          PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_community_library_test"
 
       - name: Test (non-Postgres workspaces)
-        run: bun run --filter='!@maker/{accounts,billing,cloud-projects,material-db}' --if-present test
+        run: bun run --filter='!@maker/{accounts,billing,cloud-projects,material-db,community-library}' --if-present test
 
       - name: Test @maker/accounts
         run: bun run --filter=@maker/accounts test
@@ -72,3 +73,8 @@ jobs:
         run: bun run --filter=@maker/material-db test
         env:
           DATABASE_URL: postgres://maker:maker@localhost:5432/maker_material_db_test
+
+      - name: Test @maker/community-library
+        run: bun run --filter=@maker/community-library test
+        env:
+          DATABASE_URL: postgres://maker:maker@localhost:5432/maker_community_library_test
