@@ -75,6 +75,19 @@
         "vitest": "^3.0.4",
       },
     },
+    "apps/material-db": {
+      "name": "@maker/material-db",
+      "version": "0.0.0",
+      "dependencies": {
+        "pg": "^8.13.1",
+      },
+      "devDependencies": {
+        "@types/node": "^22.10.5",
+        "@types/pg": "^8.11.10",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
     "apps/web": {
       "name": "@maker/web",
       "version": "0.0.0",
@@ -389,6 +402,8 @@
     "@maker/generators": ["@maker/generators@workspace:packages/generators"],
 
     "@maker/machine-control": ["@maker/machine-control@workspace:packages/machine-control"],
+
+    "@maker/material-db": ["@maker/material-db@workspace:apps/material-db"],
 
     "@maker/material-library": ["@maker/material-library@workspace:packages/material-library"],
 
