@@ -35,6 +35,7 @@ import { MaterialDetectionPanel } from "./components/MaterialDetectionPanel";
 import { DepthMapPanel } from "./components/DepthMapPanel";
 import { ImageGenerationPanel } from "./components/ImageGenerationPanel";
 import { VectorizeColorsPanel } from "./components/VectorizeColorsPanel";
+import { AuthPanel } from "./components/AuthPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -208,6 +209,7 @@ export function App() {
           <a href="#/">Home</a>
           <a href="#/editor">Editor</a>
         </nav>
+        <AuthPanel />
       </header>
 
       <main className="app__main">
