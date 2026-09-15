@@ -44,7 +44,18 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Test
-        run: bun run test
+      - name: Create per-service test databases
+        run: PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_billing_test"
+
+      - name: Test (non-Postgres workspaces)
+        run: bun run --filter='!@maker/{accounts,billing}' --if-present test
+
+      - name: Test @maker/accounts
+        run: bun run --filter=@maker/accounts test
         env:
           DATABASE_URL: postgres://maker:maker@localhost:5432/maker_accounts_test
+
+      - name: Test @maker/billing
+        run: bun run --filter=@maker/billing test
+        env:
+          DATABASE_URL: postgres://maker:maker@localhost:5432/maker_billing_test
