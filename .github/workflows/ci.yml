@@ -45,10 +45,12 @@ jobs:
         run: bun run build
 
       - name: Create per-service test databases
-        run: PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_billing_test"
+        run: |
+          PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_billing_test"
+          PGPASSWORD=maker psql -h localhost -U maker -d maker_accounts_test -c "CREATE DATABASE maker_cloud_projects_test"
 
       - name: Test (non-Postgres workspaces)
-        run: bun run --filter='!@maker/{accounts,billing}' --if-present test
+        run: bun run --filter='!@maker/{accounts,billing,cloud-projects}' --if-present test
 
       - name: Test @maker/accounts
         run: bun run --filter=@maker/accounts test
@@ -59,3 +61,8 @@ jobs:
         run: bun run --filter=@maker/billing test
         env:
           DATABASE_URL: postgres://maker:maker@localhost:5432/maker_billing_test
+
+      - name: Test @maker/cloud-projects
+        run: bun run --filter=@maker/cloud-projects test
+        env:
+          DATABASE_URL: postgres://maker:maker@localhost:5432/maker_cloud_projects_test
