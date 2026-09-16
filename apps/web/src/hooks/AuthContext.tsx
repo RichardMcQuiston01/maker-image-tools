@@ -5,6 +5,7 @@ export interface AuthUser {
   id: string;
   email: string;
   planTier: string;
+  role: string;
   createdAt: string;
 }
 

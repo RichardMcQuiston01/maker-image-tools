@@ -1,4 +1,5 @@
 export * from "./db.js";
+export * from "./moderators.js";
 export * from "./password.js";
 export * from "./sessions.js";
 export * from "./users.js";

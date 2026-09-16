@@ -26,10 +26,11 @@ describe("users", () => {
     await resetTestDb(pool);
   });
 
-  it("creates a user with the default free plan tier", async () => {
+  it("creates a user with the default free plan tier and user role", async () => {
     const user = await createUser(pool, "Ada@Example.com", "hunter22222");
     expect(user.email).toBe("ada@example.com"); // normalized to lowercase
     expect(user.planTier).toBe("free");
+    expect(user.role).toBe("user");
     expect(user.id).toBeTruthy();
   });
 
