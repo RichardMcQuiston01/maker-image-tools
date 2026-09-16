@@ -176,6 +176,14 @@ compare output against ImagR / Vectorizer.AI / WeSculpt sample outputs
 before merging — since "AI feature technically works" and "AI feature is
 competitive" are different bars.
 
+`packages/quality-gate` implements this for the tracks it can actually
+exercise without network access or a paid API key — 5A-1, 5A-2, and 5B-5 (the
+locally-run-model tracks) get automated regression gates against synthetic
+fixtures with exactly-known ground truth. 5B-1/5B-2/5B-3/5B-4 (Gemini-backed
+or requiring photographic-realism cues a synthetic fixture can't reliably
+provide) fall back to a documented manual eval rubric instead — see that
+package's README for the full breakdown and reasoning.
+
 ---
 
 ## 6. Stage 6+ — Platform growth
