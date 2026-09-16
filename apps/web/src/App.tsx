@@ -43,6 +43,7 @@ import { MaterialDbPanel } from "./components/MaterialDbPanel";
 import { CommunityLibraryPanel } from "./components/CommunityLibraryPanel";
 import { ModerationPanel } from "./components/ModerationPanel";
 import { OAuthCallbackPanel } from "./components/OAuthCallbackPanel";
+import { SharedProjectPanel } from "./components/SharedProjectPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -236,6 +237,8 @@ export function App() {
         <main className="app__main">
           {route.startsWith("/oauth-callback") ? (
             <OAuthCallbackPanel route={route} />
+          ) : route.startsWith("/shared/") ? (
+            <SharedProjectPanel route={route} onLoadDocument={handleLoadDocument} />
           ) : route === "/editor" ? (
             <>
               <div className="account-section">

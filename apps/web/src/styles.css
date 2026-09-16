@@ -92,6 +92,22 @@ body {
   color: light-dark(#b91c1c, #f87171);
 }
 
+.shared-project {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.shared-project__hint {
+  color: light-dark(#888, #999);
+  margin: 0;
+}
+
+.shared-project__error {
+  color: light-dark(#b91c1c, #f87171);
+}
+
 .app__main {
   flex: 1;
   padding: 1.5rem;
