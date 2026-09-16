@@ -71,6 +71,27 @@ body {
   margin: 0;
 }
 
+.auth-panel__oauth {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.auth-panel__oauth a {
+  color: light-dark(#666, #aaa);
+}
+
+.oauth-callback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.oauth-callback__error {
+  color: light-dark(#b91c1c, #f87171);
+}
+
 .app__main {
   flex: 1;
   padding: 1.5rem;

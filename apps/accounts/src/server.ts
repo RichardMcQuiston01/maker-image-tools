@@ -5,6 +5,14 @@ import {
 } from "node:http";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
 import { syncModeratorRole } from "./moderators.js";
+import {
+  buildAuthorizationRequest,
+  exchangeCodeForUserInfo,
+  getOAuthProvider,
+  InvalidOAuthStateError,
+  OAuthConfigError,
+} from "./oauth.js";
+import { findOrCreateUserForOAuthIdentity } from "./oauthIdentities.js";
 import { createSession, deleteSession, validateSession } from "./sessions.js";
 import {
   authenticate,
@@ -41,6 +49,14 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
 }
+
+function redirect(res: ServerResponse, location: string): void {
+  res.writeHead(302, { Location: location });
+  res.end();
+}
+
+const OAUTH_START_RE = /^\/oauth\/([^/]+)\/start$/;
+const OAUTH_CALLBACK_RE = /^\/oauth\/([^/]+)\/callback$/;
 
 function userJson(user: User) {
   return {
@@ -84,9 +100,20 @@ function requireString(body: Record<string, unknown>, field: string): string {
   return value;
 }
 
+function requireOAuthEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    throw new OAuthConfigError(
+      `Missing ${name} environment variable. Set it to enable OAuth login.`,
+    );
+  }
+  return value;
+}
+
 function errorStatus(err: unknown): number {
-  if (err instanceof DatabaseConfigError) return 500;
-  if (err instanceof InvalidCredentialsFormatError) return 400;
+  if (err instanceof DatabaseConfigError || err instanceof OAuthConfigError) return 500;
+  if (err instanceof InvalidCredentialsFormatError || err instanceof InvalidOAuthStateError)
+    return 400;
   if (err instanceof EmailAlreadyRegisteredError) return 409;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
@@ -113,7 +140,8 @@ export function createServer(pool: Pool = createPool()) {
       return;
     }
 
-    const pathname = (req.url ?? "").split("?", 1)[0];
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const pathname = url.pathname;
 
     migrationsReady
       .then(async () => {
@@ -168,6 +196,73 @@ export function createServer(pool: Pool = createPool()) {
           const user = await syncModeratorRole(pool, validated);
           sendJson(res, 200, { user: userJson(user) });
           return;
+        }
+
+        if (req.method === "GET") {
+          const startMatch = pathname.match(OAUTH_START_RE);
+          if (startMatch) {
+            const providerName = startMatch[1]!;
+            const provider = getOAuthProvider(providerName);
+            if (!provider) {
+              sendJson(res, 404, { error: `Unknown OAuth provider "${providerName}"` });
+              return;
+            }
+            const redirectUri = `${requireOAuthEnv("ACCOUNTS_BASE_URL").replace(/\/$/, "")}/oauth/${providerName}/callback`;
+            const { redirectTo } = buildAuthorizationRequest(provider, redirectUri);
+            redirect(res, redirectTo);
+            return;
+          }
+
+          const callbackMatch = pathname.match(OAUTH_CALLBACK_RE);
+          if (callbackMatch) {
+            const providerName = callbackMatch[1]!;
+            const webAppUrl = requireOAuthEnv("WEB_APP_URL").replace(/\/$/, "");
+
+            const providerError = url.searchParams.get("error");
+            if (providerError) {
+              redirect(
+                res,
+                `${webAppUrl}/#/oauth-callback?error=${encodeURIComponent(providerError)}`,
+              );
+              return;
+            }
+
+            const provider = getOAuthProvider(providerName);
+            if (!provider) {
+              sendJson(res, 404, { error: `Unknown OAuth provider "${providerName}"` });
+              return;
+            }
+            const code = url.searchParams.get("code");
+            const state = url.searchParams.get("state");
+            if (!code || !state) {
+              redirect(res, `${webAppUrl}/#/oauth-callback?error=missing_code_or_state`);
+              return;
+            }
+
+            const redirectUri = `${requireOAuthEnv("ACCOUNTS_BASE_URL").replace(/\/$/, "")}/oauth/${providerName}/callback`;
+            try {
+              const userInfo = await exchangeCodeForUserInfo(provider, code, state, redirectUri);
+              const user = await syncModeratorRole(
+                pool,
+                await findOrCreateUserForOAuthIdentity(pool, {
+                  provider: providerName,
+                  ...userInfo,
+                }),
+              );
+              const session = await createSession(pool, user.id);
+              redirect(
+                res,
+                `${webAppUrl}/#/oauth-callback?token=${encodeURIComponent(session.token)}`,
+              );
+            } catch (err) {
+              // A callback failure is a browser redirect target, not an API
+              // caller expecting JSON - hand the browser back to the app
+              // with an error instead of a raw error page.
+              const message = err instanceof Error ? err.message : "oauth_failed";
+              redirect(res, `${webAppUrl}/#/oauth-callback?error=${encodeURIComponent(message)}`);
+            }
+            return;
+          }
         }
 
         sendJson(res, 404, { error: "Not found" });

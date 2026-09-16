@@ -42,6 +42,7 @@ import { CloudProjectsPanel } from "./components/CloudProjectsPanel";
 import { MaterialDbPanel } from "./components/MaterialDbPanel";
 import { CommunityLibraryPanel } from "./components/CommunityLibraryPanel";
 import { ModerationPanel } from "./components/ModerationPanel";
+import { OAuthCallbackPanel } from "./components/OAuthCallbackPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -233,7 +234,9 @@ export function App() {
         </header>
 
         <main className="app__main">
-          {route === "/editor" ? (
+          {route.startsWith("/oauth-callback") ? (
+            <OAuthCallbackPanel route={route} />
+          ) : route === "/editor" ? (
             <>
               <div className="account-section">
                 <CloudProjectsPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />

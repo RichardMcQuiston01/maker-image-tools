@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { ACCOUNTS_URL } from "../lib/accountsUrl";
 
 type Mode = "login" | "signup";
 
@@ -66,6 +67,10 @@ export function AuthPanel() {
           {error}
         </p>
       )}
+      <div className="auth-panel__oauth">
+        <a href={`${ACCOUNTS_URL}/oauth/google/start`}>Continue with Google</a>
+        <a href={`${ACCOUNTS_URL}/oauth/github/start`}>Continue with GitHub</a>
+      </div>
     </div>
   );
 }
