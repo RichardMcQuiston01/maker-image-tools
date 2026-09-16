@@ -40,6 +40,7 @@ import { AuthProvider } from "./hooks/AuthContext";
 import { BillingPanel } from "./components/BillingPanel";
 import { CloudProjectsPanel } from "./components/CloudProjectsPanel";
 import { MaterialDbPanel } from "./components/MaterialDbPanel";
+import { CommunityLibraryPanel } from "./components/CommunityLibraryPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -237,6 +238,7 @@ export function App() {
                 <CloudProjectsPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />
                 <BillingPanel />
                 <MaterialDbPanel onApplyPreset={handleApplyPreset} />
+                <CommunityLibraryPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />
               </div>
 
               <div className="editor">
