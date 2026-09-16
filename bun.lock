@@ -215,6 +215,20 @@
         "vitest": "^3.0.4",
       },
     },
+    "packages/quality-gate": {
+      "name": "@maker/quality-gate",
+      "version": "0.0.0",
+      "dependencies": {
+        "@maker/ai-tools": "workspace:*",
+        "@maker/core-image": "workspace:*",
+      },
+      "devDependencies": {
+        "@upscalerjs/esrgan-slim": "1.0.0",
+        "jsdom": "^25.0.1",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4",
+      },
+    },
   },
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
@@ -422,6 +436,8 @@
     "@maker/material-db": ["@maker/material-db@workspace:apps/material-db"],
 
     "@maker/material-library": ["@maker/material-library@workspace:packages/material-library"],
+
+    "@maker/quality-gate": ["@maker/quality-gate@workspace:packages/quality-gate"],
 
     "@maker/web": ["@maker/web@workspace:apps/web"],
 
