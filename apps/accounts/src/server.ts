@@ -4,6 +4,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
+import { syncModeratorRole } from "./moderators.js";
 import { createSession, deleteSession, validateSession } from "./sessions.js";
 import {
   authenticate,
@@ -46,6 +47,7 @@ function userJson(user: User) {
     id: user.id,
     email: user.email,
     planTier: user.planTier,
+    role: user.role,
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -119,7 +121,7 @@ export function createServer(pool: Pool = createPool()) {
           const body = await parseJsonBody(req);
           const email = requireString(body, "email");
           const password = requireString(body, "password");
-          const user = await createUser(pool, email, password);
+          const user = await syncModeratorRole(pool, await createUser(pool, email, password));
           const session = await createSession(pool, user.id);
           sendJson(res, 201, { user: userJson(user), token: session.token });
           return;
@@ -129,11 +131,12 @@ export function createServer(pool: Pool = createPool()) {
           const body = await parseJsonBody(req);
           const email = requireString(body, "email");
           const password = requireString(body, "password");
-          const user = await authenticate(pool, email, password);
-          if (!user) {
+          const authenticated = await authenticate(pool, email, password);
+          if (!authenticated) {
             sendJson(res, 401, { error: "Invalid email or password" });
             return;
           }
+          const user = await syncModeratorRole(pool, authenticated);
           const session = await createSession(pool, user.id);
           sendJson(res, 200, { user: userJson(user), token: session.token });
           return;
@@ -157,11 +160,12 @@ export function createServer(pool: Pool = createPool()) {
             sendJson(res, 401, { error: "Missing bearer token" });
             return;
           }
-          const user = await validateSession(pool, token);
-          if (!user) {
+          const validated = await validateSession(pool, token);
+          if (!validated) {
             sendJson(res, 401, { error: "Invalid or expired session" });
             return;
           }
+          const user = await syncModeratorRole(pool, validated);
           sendJson(res, 200, { user: userJson(user) });
           return;
         }

@@ -44,6 +44,7 @@ describe("accounts server", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     const body = await response.json();
     expect(body.user.email).toBe("ada@example.com");
+    expect(body.user.role).toBe("user");
     expect(typeof body.token).toBe("string");
 
     const me = await fetch(`${baseUrl}/me`, {
@@ -51,6 +52,34 @@ describe("accounts server", () => {
     });
     expect(me.status).toBe(200);
     expect((await me.json()).user.id).toBe(body.user.id);
+  });
+
+  it("promotes a user to moderator based on MODERATOR_EMAILS on signup, login, and /me", async () => {
+    const originalModeratorEmails = process.env.MODERATOR_EMAILS;
+    process.env.MODERATOR_EMAILS = "ada@example.com";
+    try {
+      const signupResponse = await signup("ada@example.com", "hunter22222");
+      const signupBody = await signupResponse.json();
+      expect(signupBody.user.role).toBe("moderator");
+
+      const login = await fetch(`${baseUrl}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com", password: "hunter22222" }),
+      });
+      expect((await login.json()).user.role).toBe("moderator");
+
+      const me = await fetch(`${baseUrl}/me`, {
+        headers: { Authorization: `Bearer ${signupBody.token}` },
+      });
+      expect((await me.json()).user.role).toBe("moderator");
+    } finally {
+      if (originalModeratorEmails === undefined) {
+        delete process.env.MODERATOR_EMAILS;
+      } else {
+        process.env.MODERATOR_EMAILS = originalModeratorEmails;
+      }
+    }
   });
 
   it("rejects signup with a duplicate email with 409", async () => {

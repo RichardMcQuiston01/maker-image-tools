@@ -13,8 +13,17 @@ when the user clicks "publish," so there's nothing to fetch from elsewhere first
 
 Like `@maker/billing`/`@maker/cloud-projects`/`@maker/material-db`, this service trusts the caller
 (`apps/web`, having already authenticated against `@maker/accounts`) to pass the correct
-`userId`/`reviewerId` — it doesn't itself validate bearer tokens or session cookies, and has no
-concept of a "moderator" role yet.
+`userId`/`reviewerId` — it doesn't itself validate bearer tokens or session cookies, or the caller's
+role. `@maker/accounts` now has a `role` field (`user`/`moderator`, see its README's "Roles"
+section), and `apps/web` uses it to decide who sees the moderation UI (its `ModerationPanel` only
+shows the pending-listings queue and Approve/Reject actions to a signed-in user whose `role` is
+`moderator`; everyone else sees a one-line hint instead) and therefore who ever calls
+`/listings/:id/approve`/`/reject` in practice. That's a client-side gate, consistent with this
+service's existing trust model for `userId`/`reviewerId` generally — it is not enforced by this API
+itself, so a direct API call can still pass any `reviewerId`. Real enforcement at this layer would
+need this service to validate the caller's session against `@maker/accounts`, which would introduce
+the synchronous service-to-service call this repo's services deliberately avoid (see above); that's
+a bigger architectural step than adding a role field, and hasn't been taken yet.
 
 ## Running
 
@@ -89,8 +98,10 @@ plus `data` on the single-listing/publish/ratings responses. `rating` is
 
 ## What's not here yet
 
-- **Moderator role enforcement** — `reviewerId` is trusted as-is; any caller can approve/reject.
-  `@maker/accounts` has no role/permission system yet to check against.
+- **API-level moderator role enforcement** — `reviewerId` is trusted as-is by this service; any
+  direct API caller can still approve/reject. `apps/web` now gates its moderation UI on
+  `@maker/accounts`'s `role` field (see the note near the top of this README), but this API doesn't
+  check it itself.
 - **Publishing straight from a saved `@maker/cloud-projects` project** — right now `apps/web` would
   need to load the project and re-submit its `data`; a "publish this saved project" shortcut that
   reads from cloud-projects is a natural follow-up once both have a UI.

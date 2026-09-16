@@ -41,6 +41,7 @@ import { BillingPanel } from "./components/BillingPanel";
 import { CloudProjectsPanel } from "./components/CloudProjectsPanel";
 import { MaterialDbPanel } from "./components/MaterialDbPanel";
 import { CommunityLibraryPanel } from "./components/CommunityLibraryPanel";
+import { ModerationPanel } from "./components/ModerationPanel";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { downloadBlob } from "./lib/download";
 
@@ -239,6 +240,7 @@ export function App() {
                 <BillingPanel />
                 <MaterialDbPanel onApplyPreset={handleApplyPreset} />
                 <CommunityLibraryPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />
+                <ModerationPanel />
               </div>
 
               <div className="editor">

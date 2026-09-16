@@ -5,6 +5,7 @@ export interface User {
   id: string;
   email: string;
   planTier: string;
+  role: string;
   createdAt: Date;
 }
 
@@ -13,11 +14,18 @@ interface UserRow {
   email: string;
   password_hash: string;
   plan_tier: string;
+  role: string;
   created_at: Date;
 }
 
 function toUser(row: UserRow): User {
-  return { id: row.id, email: row.email, planTier: row.plan_tier, createdAt: row.created_at };
+  return {
+    id: row.id,
+    email: row.email,
+    planTier: row.plan_tier,
+    role: row.role,
+    createdAt: row.created_at,
+  };
 }
 
 /** Thrown by `createUser` when the email is already registered. */
