@@ -93,7 +93,7 @@ body {
 
 .account-section {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1.5rem;
   margin-bottom: 1.5rem;
   padding-bottom: 1.5rem;
@@ -149,6 +149,45 @@ body {
   gap: 0.5rem;
   border-top: 1px solid light-dark(#eee, #2a2a2a);
   padding-top: 0.5rem;
+}
+
+.community-library-panel__search,
+.community-library-panel__publish {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.community-library-panel__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.community-library-panel__results li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-top: 1px solid light-dark(#eee, #2a2a2a);
+  padding-top: 0.5rem;
+}
+
+.community-library-panel__listing-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.community-library-panel__listing-title {
+  font-weight: 600;
+}
+
+.community-library-panel__results input[type="number"] {
+  width: 3rem;
 }
 
 .ai-panel {
