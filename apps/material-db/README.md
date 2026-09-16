@@ -3,8 +3,8 @@
 Crowdsourced material settings (speed/power presets by material × machine), per `ROADMAP.md`
 Stage 6: a submission/review API with versioned presets and search. Lives in this monorepo as its
 own workspace app rather than a separate repo — see `ROADMAP.md` §8 for why. `packages/material-library`
-(Stage 4B's bundled, hand-curated static JSON) is expected to migrate into this service later as a
-one-time seed, once this exists to migrate into.
+(Stage 4B's bundled, hand-curated static JSON) has been migrated into this service as a one-time
+seed — see "Seeding from `packages/material-library`" below.
 
 Like `@maker/billing`/`@maker/cloud-projects`, this service trusts the caller (`apps/web`, having
 already authenticated against `@maker/accounts`) to pass the correct `userId`/`reviewerId` — it
@@ -25,6 +25,20 @@ bun run --cwd apps/material-db dev
 
 Listens on `PORT` (default `8791`). Applies any pending `migrations/*.sql` files automatically on
 first request (tracked in a `_migrations` table), so there's no separate migrate step to remember.
+
+## Seeding from `packages/material-library`
+
+```sh
+DATABASE_URL=postgres://maker:maker@localhost:5432/maker_material_db bun run --cwd apps/material-db seed
+```
+
+Migrates every entry in `packages/material-library`'s bundled `MATERIAL_PRESETS` in as an
+already-**approved** row (submitted and reviewed under a fixed system id,
+`00000000-0000-0000-0000-000000000001`, so seeded rows are identifiable), landing straight in
+`GET /presets` search results with no moderation step needed. It's idempotent: it skips any
+`(material, machineType, operation)` key that already has at least one submitted version, so
+running it again after real user submissions exist won't duplicate or overwrite anything. Runs its
+own migrations first, same as `dev`/`start`.
 
 ## Environment variables
 
@@ -85,8 +99,6 @@ so a future seed migration is a straight field mapping.
   direct API caller can still approve/reject. `apps/web` now gates its moderation UI on
   `@maker/accounts`'s `role` field (see the note near the top of this README), but this API doesn't
   check it itself.
-- **Migrating `packages/material-library`'s bundled presets in** — this service exists now, but the
-  actual one-time seed script hasn't been written.
 - **Duplicate-submission detection / voting** — two users submitting near-identical settings for the
   same key just creates two versions; there's no "this matches an existing preset" nudge or
   upvote/downvote signal yet.
