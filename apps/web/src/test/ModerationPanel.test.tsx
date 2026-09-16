@@ -34,6 +34,35 @@ function renderPanel() {
   );
 }
 
+/**
+ * Mounting as a moderator fires two independent fetches in the same effect
+ * (pending listings, pending presets) whose relative order isn't meaningful
+ * to assert on - route mocked responses by URL instead of call index.
+ */
+function mockModerationFetches(
+  fetchMock: ReturnType<typeof vi.mocked<typeof fetch>>,
+  {
+    user,
+    listings = [],
+    presets = [],
+  }: {
+    user: typeof MODERATOR_USER | typeof REGULAR_USER;
+    listings?: unknown[];
+    presets?: unknown[];
+  },
+) {
+  fetchMock.mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes("/me")) return jsonResponse(200, { user });
+    if (url.includes("/listings/pending")) return jsonResponse(200, { listings });
+    if (url.includes("/presets/pending")) return jsonResponse(200, { presets });
+    if (url.includes("/approve") || url.includes("/reject")) {
+      return jsonResponse(200, { listing: { status: "approved" }, preset: { status: "approved" } });
+    }
+    throw new Error(`unexpected fetch in test: ${url}`);
+  });
+}
+
 describe("ModerationPanel", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -49,7 +78,7 @@ describe("ModerationPanel", () => {
     expect(await screen.findByText(/Log in as a moderator/)).toBeInTheDocument();
   });
 
-  it("shows a login hint for a signed-in non-moderator and never fetches pending listings", async () => {
+  it("shows a login hint for a signed-in non-moderator and never fetches pending queues", async () => {
     window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: REGULAR_USER }));
@@ -57,101 +86,156 @@ describe("ModerationPanel", () => {
     renderPanel();
 
     expect(await screen.findByText(/Log in as a moderator/)).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1); // only the /me call, no /listings/pending
+    expect(fetchMock).toHaveBeenCalledTimes(1); // only the /me call
   });
 
-  it("lists pending listings for a signed-in moderator", async () => {
-    window.localStorage.setItem("maker.accounts.token", "test-token");
+  it("lists pending listings and pending presets for a signed-in moderator", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: MODERATOR_USER }));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, {
-        listings: [
-          {
-            id: "l1",
-            userId: REGULAR_USER.id,
-            title: "Fox Keychain",
-            description: "A cute little fox",
-            tags: ["keychain"],
-          },
-        ],
-      }),
-    );
+    mockModerationFetches(fetchMock, {
+      user: MODERATOR_USER,
+      listings: [
+        {
+          id: "l1",
+          userId: REGULAR_USER.id,
+          title: "Fox Keychain",
+          description: "A cute little fox",
+          tags: ["keychain"],
+        },
+      ],
+      presets: [
+        {
+          id: "p1",
+          material: "Baltic birch plywood 3mm",
+          machineType: "diode-laser",
+          operation: "cut",
+          speed: 300,
+          power: 950,
+          notes: null,
+        },
+      ],
+    });
+    window.localStorage.setItem("maker.accounts.token", "test-token");
 
     renderPanel();
 
     expect(await screen.findByText("Fox Keychain")).toBeInTheDocument();
-    expect(String(fetchMock.mock.calls[1]![0])).toContain("/listings/pending");
+    expect(await screen.findByText(/Baltic birch plywood 3mm/)).toBeInTheDocument();
+    expect(screen.getByText(/speed 300, power 950/)).toBeInTheDocument();
   });
 
-  it("approves a listing and removes it from the queue", async () => {
-    window.localStorage.setItem("maker.accounts.token", "test-token");
+  it("approves a listing and removes only it from the community library queue", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: MODERATOR_USER }));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, {
-        listings: [
-          {
-            id: "l1",
-            userId: REGULAR_USER.id,
-            title: "Fox Keychain",
-            description: null,
-            tags: [],
-          },
-        ],
-      }),
-    );
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { listing: { id: "l1", status: "approved" } }),
-    );
+    mockModerationFetches(fetchMock, {
+      user: MODERATOR_USER,
+      listings: [
+        { id: "l1", userId: REGULAR_USER.id, title: "Fox Keychain", description: null, tags: [] },
+      ],
+    });
+    window.localStorage.setItem("maker.accounts.token", "test-token");
 
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
 
     await waitFor(() => expect(screen.queryByText("Fox Keychain")).not.toBeInTheDocument());
-    const [url, init] = fetchMock.mock.calls[2]!;
-    expect(String(url)).toContain("/listings/l1/approve");
+    const approveCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/listings/l1/approve"),
+    );
+    expect(approveCall).toBeDefined();
+    const [, init] = approveCall!;
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toMatchObject({ reviewerId: MODERATOR_USER.id });
   });
 
   it("rejects a listing and removes it from the queue", async () => {
-    window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: MODERATOR_USER }));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, {
-        listings: [
-          {
-            id: "l1",
-            userId: REGULAR_USER.id,
-            title: "Fox Keychain",
-            description: null,
-            tags: [],
-          },
-        ],
-      }),
-    );
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { listing: { id: "l1", status: "rejected" } }),
-    );
+    mockModerationFetches(fetchMock, {
+      user: MODERATOR_USER,
+      listings: [
+        { id: "l1", userId: REGULAR_USER.id, title: "Fox Keychain", description: null, tags: [] },
+      ],
+    });
+    window.localStorage.setItem("maker.accounts.token", "test-token");
 
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
 
     await waitFor(() => expect(screen.queryByText("Fox Keychain")).not.toBeInTheDocument());
-    const [url] = fetchMock.mock.calls[2]!;
-    expect(String(url)).toContain("/listings/l1/reject");
+    const rejectCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/listings/l1/reject"),
+    );
+    expect(rejectCall).toBeDefined();
   });
 
-  it("shows an empty-queue hint when nothing is pending", async () => {
-    window.localStorage.setItem("maker.accounts.token", "test-token");
+  it("approves a preset and removes only it from the material presets queue", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: MODERATOR_USER }));
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { listings: [] }));
+    mockModerationFetches(fetchMock, {
+      user: MODERATOR_USER,
+      presets: [
+        {
+          id: "p1",
+          material: "Baltic birch plywood 3mm",
+          machineType: "diode-laser",
+          operation: "cut",
+          speed: 300,
+          power: 950,
+          notes: null,
+        },
+      ],
+    });
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Baltic birch plywood 3mm/)).not.toBeInTheDocument(),
+    );
+    const approveCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/presets/p1/approve"),
+    );
+    expect(approveCall).toBeDefined();
+    const [, init] = approveCall!;
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ reviewerId: MODERATOR_USER.id });
+  });
+
+  it("rejects a preset and removes it from the queue", async () => {
+    const fetchMock = vi.mocked(fetch);
+    mockModerationFetches(fetchMock, {
+      user: MODERATOR_USER,
+      presets: [
+        {
+          id: "p1",
+          material: "Baltic birch plywood 3mm",
+          machineType: "diode-laser",
+          operation: "cut",
+          speed: 300,
+          power: 950,
+          notes: null,
+        },
+      ],
+    });
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Baltic birch plywood 3mm/)).not.toBeInTheDocument(),
+    );
+    const rejectCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/presets/p1/reject"),
+    );
+    expect(rejectCall).toBeDefined();
+  });
+
+  it("shows an empty-queue hint for both sections when nothing is pending", async () => {
+    const fetchMock = vi.mocked(fetch);
+    mockModerationFetches(fetchMock, { user: MODERATOR_USER });
+    window.localStorage.setItem("maker.accounts.token", "test-token");
 
     renderPanel();
 
-    expect(await screen.findByText(/Nothing pending review/)).toBeInTheDocument();
+    expect(await screen.findAllByText(/Nothing pending review/)).toHaveLength(2);
   });
 });

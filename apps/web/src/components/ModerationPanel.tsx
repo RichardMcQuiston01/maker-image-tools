@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
+import { MATERIAL_DB_URL } from "../lib/materialDbUrl";
 
 interface PendingListing {
   id: string;
@@ -10,17 +11,29 @@ interface PendingListing {
   tags: string[];
 }
 
+interface PendingPreset {
+  id: string;
+  material: string;
+  machineType: string;
+  operation: string;
+  speed: number;
+  power: number;
+  notes: string | null;
+}
+
 export function ModerationPanel() {
   const { status: authStatus, user } = useAuth();
   const isModerator = authStatus === "signed-in" && user?.role === "moderator";
 
   const [listings, setListings] = useState<PendingListing[]>([]);
+  const [listingsError, setListingsError] = useState<string | null>(null);
+  const [presets, setPresets] = useState<PendingPreset[]>([]);
+  const [presetsError, setPresetsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const refreshPending = useCallback(async () => {
+  const refreshListings = useCallback(async () => {
     try {
-      setError(null);
+      setListingsError(null);
       const response = await fetch(`${COMMUNITY_LIBRARY_URL}/listings/pending`);
       if (!response.ok) {
         throw new Error(`Community library responded with ${response.status}`);
@@ -28,7 +41,7 @@ export function ModerationPanel() {
       const body = (await response.json()) as { listings: PendingListing[] };
       setListings(body.listings);
     } catch (err) {
-      setError(
+      setListingsError(
         err instanceof Error
           ? `${err.message} (is the @maker/community-library dev server running?)`
           : "Failed to load pending listings",
@@ -36,20 +49,40 @@ export function ModerationPanel() {
     }
   }, []);
 
+  const refreshPresets = useCallback(async () => {
+    try {
+      setPresetsError(null);
+      const response = await fetch(`${MATERIAL_DB_URL}/presets/pending`);
+      if (!response.ok) {
+        throw new Error(`Material database responded with ${response.status}`);
+      }
+      const body = (await response.json()) as { presets: PendingPreset[] };
+      setPresets(body.presets);
+    } catch (err) {
+      setPresetsError(
+        err instanceof Error
+          ? `${err.message} (is the @maker/material-db dev server running?)`
+          : "Failed to load pending presets",
+      );
+    }
+  }, []);
+
   useEffect(() => {
     if (isModerator) {
-      void refreshPending();
+      void refreshListings();
+      void refreshPresets();
     } else {
       setListings([]);
+      setPresets([]);
     }
-  }, [isModerator, refreshPending]);
+  }, [isModerator, refreshListings, refreshPresets]);
 
-  const handleReview = useCallback(
+  const handleReviewListing = useCallback(
     async (id: string, action: "approve" | "reject") => {
       if (!user) return;
       try {
         setBusy(true);
-        setError(null);
+        setListingsError(null);
         const response = await fetch(`${COMMUNITY_LIBRARY_URL}/listings/${id}/${action}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -60,9 +93,37 @@ export function ModerationPanel() {
         }
         setListings((current) => current.filter((listing) => listing.id !== id));
       } catch (err) {
-        setError(
+        setListingsError(
           err instanceof Error
             ? `${err.message} (is the @maker/community-library dev server running?)`
+            : "Failed to submit review",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [user],
+  );
+
+  const handleReviewPreset = useCallback(
+    async (id: string, action: "approve" | "reject") => {
+      if (!user) return;
+      try {
+        setBusy(true);
+        setPresetsError(null);
+        const response = await fetch(`${MATERIAL_DB_URL}/presets/${id}/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewerId: user.id }),
+        });
+        if (!response.ok) {
+          throw new Error(`Review failed with ${response.status}`);
+        }
+        setPresets((current) => current.filter((preset) => preset.id !== id));
+      } catch (err) {
+        setPresetsError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/material-db dev server running?)`
             : "Failed to submit review",
         );
       } finally {
@@ -76,7 +137,7 @@ export function ModerationPanel() {
     return (
       <section className="ai-panel">
         <h2>Moderation Queue</h2>
-        <p className="ai-panel__hint">Log in as a moderator to review pending listings.</p>
+        <p className="ai-panel__hint">Log in as a moderator to review pending submissions.</p>
       </section>
     );
   }
@@ -84,10 +145,12 @@ export function ModerationPanel() {
   return (
     <section className="ai-panel">
       <h2>Moderation Queue</h2>
-      <p className="ai-panel__hint">Listings awaiting approval, oldest first.</p>
-      {error && (
+      <p className="ai-panel__hint">Submissions awaiting approval, oldest first.</p>
+
+      <h3>Community Library</h3>
+      {listingsError && (
         <p role="alert" className="ai-panel__error">
-          {error}
+          {listingsError}
         </p>
       )}
       {listings.length === 0 ? (
@@ -105,14 +168,56 @@ export function ModerationPanel() {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void handleReview(listing.id, "approve")}
+                  onClick={() => void handleReviewListing(listing.id, "approve")}
                 >
                   Approve
                 </button>
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void handleReview(listing.id, "reject")}
+                  onClick={() => void handleReviewListing(listing.id, "reject")}
+                >
+                  Reject
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h3>Material Presets</h3>
+      {presetsError && (
+        <p role="alert" className="ai-panel__error">
+          {presetsError}
+        </p>
+      )}
+      {presets.length === 0 ? (
+        <p className="ai-panel__hint">Nothing pending review.</p>
+      ) : (
+        <ul className="moderation-panel__results">
+          {presets.map((preset) => (
+            <li key={preset.id}>
+              <div className="moderation-panel__listing-info">
+                <span className="moderation-panel__listing-title">
+                  {preset.material} — {preset.machineType} — {preset.operation}
+                </span>
+                <span>
+                  speed {preset.speed}, power {preset.power}
+                </span>
+                {preset.notes && <span>{preset.notes}</span>}
+              </div>
+              <div className="ai-panel__actions">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleReviewPreset(preset.id, "approve")}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleReviewPreset(preset.id, "reject")}
                 >
                   Reject
                 </button>
