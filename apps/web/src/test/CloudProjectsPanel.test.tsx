@@ -190,4 +190,41 @@ describe("CloudProjectsPanel", () => {
 
     expect(await screen.findByText(/share-token-123/)).toBeInTheDocument();
   });
+
+  it("revokes a share link and hides the share UI", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "My Design",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { token: "share-token-123" }));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    expect(await screen.findByText(/share-token-123/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const [url, init] = fetchMock.mock.calls[3]!;
+    expect(String(url)).toContain("/projects/p1/share");
+    expect(init?.method).toBe("DELETE");
+    expect(JSON.parse(String(init?.body))).toEqual({ userId: SIGNED_IN_USER.id });
+    await waitFor(() => expect(screen.queryByText(/share-token-123/)).not.toBeInTheDocument());
+  });
 });

@@ -157,6 +157,34 @@ export function CloudProjectsPanel({
     [user],
   );
 
+  const handleRevokeShare = useCallback(
+    async (id: string) => {
+      if (!user) return;
+      try {
+        setBusy(true);
+        setError(null);
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}/share`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id }),
+        });
+        if (!response.ok && response.status !== 204) {
+          throw new Error(`Revoke failed with ${response.status}`);
+        }
+        setShareInfo((current) => (current?.projectId === id ? null : current));
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/cloud-projects dev server running?)`
+            : "Failed to revoke share link",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [user],
+  );
+
   if (authStatus !== "signed-in") {
     return (
       <section className="ai-panel">
@@ -206,7 +234,20 @@ export function CloudProjectsPanel({
                 </button>
               </div>
               {shareInfo?.projectId === project.id && (
-                <p className="ai-panel__hint">Share token: {shareInfo.token}</p>
+                <p className="ai-panel__hint">
+                  Share link:{" "}
+                  <a
+                    href={`#/shared/${shareInfo.token}`}
+                  >{`${window.location.origin}${window.location.pathname}#/shared/${shareInfo.token}`}</a>
+                  {" — "}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleRevokeShare(project.id)}
+                  >
+                    Revoke
+                  </button>
+                </p>
               )}
             </li>
           ))}
