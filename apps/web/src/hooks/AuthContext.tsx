@@ -18,6 +18,8 @@ export interface UseAuthResult {
   signup: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Adopts a session token @maker/accounts' OAuth callback handed back in the URL. */
+  completeOAuthLogin: (token: string) => Promise<void>;
 }
 
 const TOKEN_STORAGE_KEY = "maker.accounts.token";
@@ -146,6 +148,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [authenticate],
   );
 
+  const completeOAuthLogin = useCallback(async (oauthToken: string) => {
+    setStatus("working");
+    setError(null);
+    try {
+      const response = await fetch(`${ACCOUNTS_URL}/me`, {
+        headers: { Authorization: `Bearer ${oauthToken}` },
+      });
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, "OAuth sign-in failed"));
+      }
+      const body = (await response.json()) as { user: AuthUser };
+      writeStoredToken(oauthToken);
+      setToken(oauthToken);
+      setUser(body.user);
+      setStatus("signed-in");
+    } catch (err) {
+      setStatus("signed-out");
+      setError(
+        err instanceof Error
+          ? `${err.message} (is the @maker/accounts dev server running?)`
+          : "OAuth sign-in failed",
+      );
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     if (token) {
       try {
@@ -164,7 +191,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   return (
-    <AuthContext.Provider value={{ status, user, error, signup, login, logout }}>
+    <AuthContext.Provider
+      value={{ status, user, error, signup, login, logout, completeOAuthLogin }}
+    >
       {children}
     </AuthContext.Provider>
   );

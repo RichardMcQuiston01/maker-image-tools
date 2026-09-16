@@ -30,6 +30,10 @@ describe("AuthPanel", () => {
     expect(await screen.findByPlaceholderText("Email")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Password")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    const googleLink = screen.getByRole("link", { name: "Continue with Google" });
+    expect(googleLink).toHaveAttribute("href", expect.stringContaining("/oauth/google/start"));
+    const githubLink = screen.getByRole("link", { name: "Continue with GitHub" });
+    expect(githubLink).toHaveAttribute("href", expect.stringContaining("/oauth/github/start"));
   });
 
   it("logs in and persists the session token, then shows the signed-in view", async () => {
