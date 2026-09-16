@@ -12,10 +12,12 @@
     "build": "tsc -p tsconfig.json",
     "dev": "bun run src/main.ts",
     "start": "bun run src/main.ts",
+    "seed": "bun run src/seedMain.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@maker/material-library": "workspace:*",
     "pg": "^8.13.1"
   },
   "devDependencies": {

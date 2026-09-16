@@ -93,6 +93,7 @@
       "name": "@maker/material-db",
       "version": "0.0.0",
       "dependencies": {
+        "@maker/material-library": "workspace:*",
         "pg": "^8.13.1",
       },
       "devDependencies": {
