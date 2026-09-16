@@ -8,8 +8,14 @@ one-time seed, once this exists to migrate into.
 
 Like `@maker/billing`/`@maker/cloud-projects`, this service trusts the caller (`apps/web`, having
 already authenticated against `@maker/accounts`) to pass the correct `userId`/`reviewerId` — it
-doesn't itself validate bearer tokens or session cookies, and has no concept of a "moderator" role
-yet (see "What's not here yet").
+doesn't itself validate bearer tokens or session cookies, or the caller's role. `@maker/accounts`
+now has a `role` field (`user`/`moderator`, see its README's "Roles" section), and `apps/web` uses
+it to decide who sees the moderation UI (its `ModerationPanel` only shows this service's pending
+presets and Approve/Reject actions to a signed-in user whose `role` is `moderator`) and therefore
+who ever calls `/presets/:id/approve`/`/reject` in practice. That's a client-side gate, consistent
+with this service's existing trust model for `userId`/`reviewerId` generally — it is not enforced
+by this API itself, so a direct API call can still pass any `reviewerId` (see "What's not here
+yet").
 
 ## Running
 
@@ -75,8 +81,10 @@ so a future seed migration is a straight field mapping.
 
 ## What's not here yet
 
-- **Moderator role enforcement** — `reviewerId` is trusted as-is; any caller can approve/reject.
-  `@maker/accounts` has no role/permission system yet to check against.
+- **API-level moderator role enforcement** — `reviewerId` is trusted as-is by this service; any
+  direct API caller can still approve/reject. `apps/web` now gates its moderation UI on
+  `@maker/accounts`'s `role` field (see the note near the top of this README), but this API doesn't
+  check it itself.
 - **Migrating `packages/material-library`'s bundled presets in** — this service exists now, but the
   actual one-time seed script hasn't been written.
 - **Duplicate-submission detection / voting** — two users submitting near-identical settings for the
