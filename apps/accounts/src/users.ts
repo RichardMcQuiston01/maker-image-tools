@@ -37,6 +37,11 @@ const MIN_PASSWORD_LENGTH = 8;
 /** Thrown for a caller-supplied email/password that fails basic format validation. */
 export class InvalidCredentialsFormatError extends Error {}
 
+const VALID_ROLES = new Set(["user", "moderator"]);
+
+/** Thrown for a caller-supplied role that isn't one of the roles this service recognizes. */
+export class InvalidRoleError extends Error {}
+
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -109,6 +114,25 @@ export async function findUserByEmail(pool: Pool, email: string): Promise<User |
 
 export async function findUserById(pool: Pool, id: string): Promise<User | undefined> {
   const { rows } = await pool.query<UserRow>("SELECT * FROM users WHERE id = $1", [id]);
+  return rows[0] ? toUser(rows[0]) : undefined;
+}
+
+/**
+ * Sets `id`'s role, returning the updated user or `undefined` if no user has
+ * that id. Callers are expected to have already verified the caller is
+ * allowed to do this (see server.ts's `POST /users/:id/role`) - this
+ * function itself just validates the role value against the database's own
+ * `CHECK (role IN ('user', 'moderator'))` constraint, so a bad value fails
+ * with a clean 400-worthy error instead of a raw constraint-violation one.
+ */
+export async function setUserRole(pool: Pool, id: string, role: string): Promise<User | undefined> {
+  if (!VALID_ROLES.has(role)) {
+    throw new InvalidRoleError(`"role" must be one of: ${[...VALID_ROLES].join(", ")}`);
+  }
+  const { rows } = await pool.query<UserRow>(
+    "UPDATE users SET role = $1 WHERE id = $2 RETURNING *",
+    [role, id],
+  );
   return rows[0] ? toUser(rows[0]) : undefined;
 }
 

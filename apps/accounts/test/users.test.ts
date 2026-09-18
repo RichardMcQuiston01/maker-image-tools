@@ -7,6 +7,8 @@ import {
   findUserByEmail,
   findUserById,
   InvalidCredentialsFormatError,
+  InvalidRoleError,
+  setUserRole,
 } from "../src/users.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
@@ -62,6 +64,26 @@ describe("users", () => {
   it("returns undefined for an unknown email or id", async () => {
     expect(await findUserByEmail(pool, "nobody@example.com")).toBeUndefined();
     expect(await findUserById(pool, "00000000-0000-0000-0000-000000000000")).toBeUndefined();
+  });
+
+  describe("setUserRole", () => {
+    it("updates and returns the user's role", async () => {
+      const created = await createUser(pool, "ada@example.com", "hunter22222");
+      const updated = await setUserRole(pool, created.id, "moderator");
+      expect(updated?.role).toBe("moderator");
+      expect((await findUserById(pool, created.id))?.role).toBe("moderator");
+    });
+
+    it("returns undefined for an unknown user id", async () => {
+      expect(
+        await setUserRole(pool, "00000000-0000-0000-0000-000000000000", "moderator"),
+      ).toBeUndefined();
+    });
+
+    it("rejects a role that isn't 'user' or 'moderator'", async () => {
+      const created = await createUser(pool, "ada@example.com", "hunter22222");
+      await expect(setUserRole(pool, created.id, "admin")).rejects.toThrow(InvalidRoleError);
+    });
   });
 
   describe("authenticate", () => {

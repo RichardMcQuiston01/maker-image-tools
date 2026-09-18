@@ -151,6 +151,114 @@ describe("accounts server", () => {
     expect(response.status).toBe(404);
   });
 
+  describe("POST /users/:id/role", () => {
+    async function promoteToModerator(email: string) {
+      const originalModeratorEmails = process.env.MODERATOR_EMAILS;
+      process.env.MODERATOR_EMAILS = email;
+      try {
+        const signupResponse = await signup(email, "hunter22222");
+        return await signupResponse.json();
+      } finally {
+        if (originalModeratorEmails === undefined) {
+          delete process.env.MODERATOR_EMAILS;
+        } else {
+          process.env.MODERATOR_EMAILS = originalModeratorEmails;
+        }
+      }
+    }
+
+    it("lets an existing moderator promote another user to moderator", async () => {
+      const moderator = await promoteToModerator("mod@example.com");
+      const targetSignup = await (await signup("target@example.com", "hunter22222")).json();
+
+      const response = await fetch(`${baseUrl}/users/${targetSignup.user.id}/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${moderator.token}`,
+        },
+        body: JSON.stringify({ role: "moderator" }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).user.role).toBe("moderator");
+
+      const roleCheck = await fetch(`${baseUrl}/users/${targetSignup.user.id}/role`);
+      expect((await roleCheck.json()).role).toBe("moderator");
+    });
+
+    it("lets an existing moderator demote another moderator back to user", async () => {
+      const moderator = await promoteToModerator("mod@example.com");
+      const otherModerator = await promoteToModerator("other-mod@example.com");
+
+      const response = await fetch(`${baseUrl}/users/${otherModerator.user.id}/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${moderator.token}`,
+        },
+        body: JSON.stringify({ role: "user" }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).user.role).toBe("user");
+    });
+
+    it("rejects a non-moderator caller with 403", async () => {
+      const caller = await (await signup("caller@example.com", "hunter22222")).json();
+      const target = await (await signup("target@example.com", "hunter22222")).json();
+
+      const response = await fetch(`${baseUrl}/users/${target.user.id}/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${caller.token}`,
+        },
+        body: JSON.stringify({ role: "moderator" }),
+      });
+      expect(response.status).toBe(403);
+
+      const roleCheck = await fetch(`${baseUrl}/users/${target.user.id}/role`);
+      expect((await roleCheck.json()).role).toBe("user");
+    });
+
+    it("rejects a request with no bearer token with 401", async () => {
+      const target = await (await signup("target@example.com", "hunter22222")).json();
+      const response = await fetch(`${baseUrl}/users/${target.user.id}/role`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "moderator" }),
+      });
+      expect(response.status).toBe(401);
+    });
+
+    it("rejects an invalid role value with 400", async () => {
+      const moderator = await promoteToModerator("mod@example.com");
+      const target = await (await signup("target@example.com", "hunter22222")).json();
+
+      const response = await fetch(`${baseUrl}/users/${target.user.id}/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${moderator.token}`,
+        },
+        body: JSON.stringify({ role: "admin" }),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("returns 404 for an unknown target user id", async () => {
+      const moderator = await promoteToModerator("mod@example.com");
+      const response = await fetch(`${baseUrl}/users/00000000-0000-0000-0000-000000000000/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${moderator.token}`,
+        },
+        body: JSON.stringify({ role: "moderator" }),
+      });
+      expect(response.status).toBe(404);
+    });
+  });
+
   it("rejects a request body that isn't valid JSON with 400", async () => {
     const response = await fetch(`${baseUrl}/signup`, {
       method: "POST",
