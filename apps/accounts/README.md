@@ -50,21 +50,26 @@ export DATABASE_URL=postgres://maker:maker@localhost:5432/maker_accounts
 
 ## API
 
-| Route                           | Body                  | Auth                            | Response                                                                         |
-| ------------------------------- | --------------------- | ------------------------------- | -------------------------------------------------------------------------------- |
-| `POST /signup`                  | `{ email, password }` | —                               | `201 { user, token }` / `409` if email taken / `400` if invalid                  |
-| `POST /login`                   | `{ email, password }` | —                               | `200 { user, token }` / `401` if wrong                                           |
-| `POST /logout`                  | —                     | `Authorization: Bearer <token>` | `204`                                                                            |
-| `GET /me`                       | —                     | `Authorization: Bearer <token>` | `200 { user }` / `401` if invalid/expired                                        |
-| `GET /oauth/:provider/start`    | —                     | —                               | `302` to the provider's consent page / `404` unknown provider                    |
-| `GET /oauth/:provider/callback` | —                     | —                               | `302` back to `WEB_APP_URL` with `?token=` or `?error=` / `404` unknown provider |
-| `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                           |
+| Route                           | Body                  | Auth                            | Response                                                                                                                     |
+| ------------------------------- | --------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `POST /signup`                  | `{ email, password }` | —                               | `201 { user, token }` / `409` if email taken / `400` if invalid                                                              |
+| `POST /login`                   | `{ email, password }` | —                               | `200 { user, token }` / `401` if wrong                                                                                       |
+| `POST /logout`                  | —                     | `Authorization: Bearer <token>` | `204`                                                                                                                        |
+| `GET /me`                       | —                     | `Authorization: Bearer <token>` | `200 { user }` / `401` if invalid/expired                                                                                    |
+| `GET /oauth/:provider/start`    | —                     | —                               | `302` to the provider's consent page / `404` unknown provider                                                                |
+| `GET /oauth/:provider/callback` | —                     | —                               | `302` back to `WEB_APP_URL` with `?token=` or `?error=` / `404` unknown provider                                             |
+| `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                                                                       |
+| `POST /users/:id/role`          | `{ role }`            | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid role / `401` invalid/expired token / `403` caller isn't a moderator / `404` unknown target id |
 
 `GET /users/:id/role` is server-to-server: `apps/community-library` and `apps/material-db` call it
 to verify a caller-supplied `reviewerId` actually belongs to a `moderator` before honoring an
 approve/reject request. It's intentionally unauthenticated (like every other cross-service call in
 this repo) — the id itself, not a bearer token, is the input, and this repo's services already
 trust each other's plain ids everywhere else.
+
+`POST /users/:id/role` is the role-management API: an already-authenticated moderator sets any
+user's `role` to `user` or `moderator` (promote or demote). See "Roles" below for how this fits
+alongside `MODERATOR_EMAILS`.
 
 `user` is `{ id, email, planTier, role, createdAt }`. Sessions are bearer tokens (not cookies): the
 client is expected to hold the token (e.g. in memory or `localStorage`) and send it as
@@ -75,14 +80,20 @@ service, same as `@maker/ai-inference`'s wide-open dev CORS policy.
 
 ## Roles
 
-Every user has a `role`: `user` (default) or `moderator`. There's no role-management API yet —
-instead, `MODERATOR_EMAILS` (a comma-separated, case-insensitive list) is checked on every
-signup/login/session-check (`/signup`, `/login`, `/me`), and a matching user's role is promoted to
-`moderator` and persisted the moment they next authenticate. This mirrors the "trust config, not an
-admin UI" approach `GEMINI_API_KEY`-style env vars already use elsewhere in this repo, and avoids
-the bootstrapping problem of needing an existing admin to grant the first admin. It's promote-only:
-removing an email from the list doesn't revoke a role already granted (that's a manual
-`UPDATE users SET role = 'user'` for now).
+Every user has a `role`: `user` (default) or `moderator`. There are two ways to grant it:
+
+- `MODERATOR_EMAILS` (a comma-separated, case-insensitive list) is checked on every
+  signup/login/session-check (`/signup`, `/login`, `/me`), and a matching user's role is promoted
+  to `moderator` and persisted the moment they next authenticate. This mirrors the "trust config,
+  not an admin UI" approach `GEMINI_API_KEY`-style env vars already use elsewhere in this repo, and
+  solves the bootstrapping problem of needing an existing moderator to grant the first one. It's
+  promote-only: removing an email from the list doesn't revoke a role already granted.
+- `POST /users/:id/role` lets any already-authenticated moderator promote or demote any other user
+  by id — the first moderator still has to come from `MODERATOR_EMAILS`, but every moderator after
+  that can be granted (or revoked) through this API instead of a direct DB update. There's
+  deliberately no floor stopping a moderator from demoting themselves or every other moderator;
+  `apps/web` doesn't expose a UI for this yet (it's API-only for now), so that's a self-inflicted
+  API-caller mistake, not something worth defending against server-side.
 
 As with everything else in this service, callers are expected to enforce anything role-gated
 themselves by checking the `role` on the authenticated user — this service doesn't expose a
@@ -124,8 +135,8 @@ deployment enabling this needs to register a real OAuth app (redirect URI
 - **Expired-session cleanup** — an expired session simply fails `/me`/`validateSession`; nothing
   deletes the row. A real deployment would run a periodic `DELETE FROM sessions WHERE expires_at < now()`.
 - **Password reset / email verification** — not yet implemented.
-- **A role-management API/UI** — roles can currently only be granted via `MODERATOR_EMAILS` config
-  or a direct DB update, not through a request any user or admin can make.
+- **A role-management UI** — `POST /users/:id/role` exists, but `apps/web` has no admin screen
+  that calls it yet; granting/revoking moderator access today means calling the API directly.
 - **Adding a password to an OAuth-only account, or linking a second OAuth provider from a signed-in
   session** — both are only possible today by signing in with an email that matches an existing
   account, which links automatically; there's no explicit "connect another provider" action.

@@ -20,9 +20,14 @@ import {
   EmailAlreadyRegisteredError,
   findUserById,
   InvalidCredentialsFormatError,
+  InvalidRoleError,
+  setUserRole,
   type User,
 } from "./users.js";
 import type { Pool } from "pg";
+
+/** Thrown when the authenticated caller of `POST /users/:id/role` isn't a moderator. */
+export class NotAModeratorError extends Error {}
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
 
@@ -114,8 +119,13 @@ function requireOAuthEnv(name: string): string {
 
 function errorStatus(err: unknown): number {
   if (err instanceof DatabaseConfigError || err instanceof OAuthConfigError) return 500;
-  if (err instanceof InvalidCredentialsFormatError || err instanceof InvalidOAuthStateError)
+  if (
+    err instanceof InvalidCredentialsFormatError ||
+    err instanceof InvalidOAuthStateError ||
+    err instanceof InvalidRoleError
+  )
     return 400;
+  if (err instanceof NotAModeratorError) return 403;
   if (err instanceof EmailAlreadyRegisteredError) return 409;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
@@ -200,18 +210,44 @@ export function createServer(pool: Pool = createPool()) {
           return;
         }
 
-        if (req.method === "GET") {
-          const roleMatch = pathname.match(USER_ROLE_RE);
-          if (roleMatch) {
-            const user = await findUserById(pool, roleMatch[1]!);
-            if (!user) {
-              sendJson(res, 404, { error: "Not found" });
-              return;
-            }
-            sendJson(res, 200, { role: user.role });
+        const roleMatch = pathname.match(USER_ROLE_RE);
+        if (roleMatch && req.method === "GET") {
+          const user = await findUserById(pool, roleMatch[1]!);
+          if (!user) {
+            sendJson(res, 404, { error: "Not found" });
             return;
           }
+          sendJson(res, 200, { role: user.role });
+          return;
+        }
 
+        if (roleMatch && req.method === "POST") {
+          const token = bearerToken(req);
+          if (!token) {
+            sendJson(res, 401, { error: "Missing bearer token" });
+            return;
+          }
+          const validated = await validateSession(pool, token);
+          if (!validated) {
+            sendJson(res, 401, { error: "Invalid or expired session" });
+            return;
+          }
+          const caller = await syncModeratorRole(pool, validated);
+          if (caller.role !== "moderator") {
+            throw new NotAModeratorError(`Caller (${caller.id}) is not a moderator`);
+          }
+          const body = await parseJsonBody(req);
+          const role = requireString(body, "role");
+          const updated = await setUserRole(pool, roleMatch[1]!, role);
+          if (!updated) {
+            sendJson(res, 404, { error: "Not found" });
+            return;
+          }
+          sendJson(res, 200, { user: userJson(updated) });
+          return;
+        }
+
+        if (req.method === "GET") {
           const startMatch = pathname.match(OAUTH_START_RE);
           if (startMatch) {
             const providerName = startMatch[1]!;
