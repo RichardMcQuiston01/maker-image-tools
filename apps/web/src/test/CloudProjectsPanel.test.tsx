@@ -227,4 +227,55 @@ describe("CloudProjectsPanel", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ userId: SIGNED_IN_USER.id });
     await waitFor(() => expect(screen.queryByText(/share-token-123/)).not.toBeInTheDocument());
   });
+
+  it("publishes a saved project's data straight to the community library", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    const projectData: VectorDocument = { layers: [], objects: [] };
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "My Design",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: projectData } }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(201, { listing: { id: "l1", status: "pending" } }),
+    );
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Publish to Library" }));
+
+    const titleInput = await screen.findByPlaceholderText("Title");
+    expect(titleInput).toHaveValue("My Design");
+    fireEvent.change(screen.getByPlaceholderText("Tags (comma separated)"), {
+      target: { value: "keychain, fox" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const [loadUrl] = fetchMock.mock.calls[2]!;
+    expect(String(loadUrl)).toContain(`/projects/p1?userId=${SIGNED_IN_USER.id}`);
+    const [listingUrl, listingInit] = fetchMock.mock.calls[3]!;
+    expect(String(listingUrl)).toContain("/listings");
+    expect(listingInit?.method).toBe("POST");
+    expect(JSON.parse(String(listingInit?.body))).toMatchObject({
+      userId: SIGNED_IN_USER.id,
+      title: "My Design",
+      tags: ["keychain", "fox"],
+      data: projectData,
+    });
+    expect(await screen.findByText(/awaiting moderation/)).toBeInTheDocument();
+  });
 });

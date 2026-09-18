@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { VectorDocument } from "@maker/core-vector";
 import { useAuth } from "../hooks/useAuth";
 import { CLOUD_PROJECTS_URL } from "../lib/cloudProjectsUrl";
+import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
 
 interface ProjectSummary {
   id: string;
@@ -25,6 +26,11 @@ export function CloudProjectsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareInfo, setShareInfo] = useState<{ projectId: string; token: string } | null>(null);
+  const [publishOpenFor, setPublishOpenFor] = useState<string | null>(null);
+  const [publishTitle, setPublishTitle] = useState("");
+  const [publishDescription, setPublishDescription] = useState("");
+  const [publishTags, setPublishTags] = useState("");
+  const [publishStatus, setPublishStatus] = useState<"idle" | "submitting" | "submitted">("idle");
 
   const refreshProjects = useCallback(async (userId: string) => {
     try {
@@ -185,6 +191,58 @@ export function CloudProjectsPanel({
     [user],
   );
 
+  const handleOpenPublish = useCallback((project: ProjectSummary) => {
+    setPublishOpenFor(project.id);
+    setPublishTitle(project.name);
+    setPublishDescription("");
+    setPublishTags("");
+    setPublishStatus("idle");
+  }, []);
+
+  const handlePublish = useCallback(
+    async (id: string) => {
+      if (!user || !publishTitle.trim()) return;
+      try {
+        setPublishStatus("submitting");
+        setError(null);
+        const projectResponse = await fetch(
+          `${CLOUD_PROJECTS_URL}/projects/${id}?userId=${user.id}`,
+        );
+        if (!projectResponse.ok) {
+          throw new Error(`Load failed with ${projectResponse.status}`);
+        }
+        const projectBody = (await projectResponse.json()) as { project: { data: VectorDocument } };
+        const tags = publishTags
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0);
+        const listingResponse = await fetch(`${COMMUNITY_LIBRARY_URL}/listings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            title: publishTitle.trim(),
+            description: publishDescription.trim() || undefined,
+            tags,
+            data: projectBody.project.data,
+          }),
+        });
+        if (!listingResponse.ok) {
+          throw new Error(`Publish failed with ${listingResponse.status}`);
+        }
+        setPublishStatus("submitted");
+      } catch (err) {
+        setPublishStatus("idle");
+        setError(
+          err instanceof Error
+            ? `${err.message} (are the @maker/cloud-projects and @maker/community-library dev servers running?)`
+            : "Failed to publish project",
+        );
+      }
+    },
+    [user, publishTitle, publishDescription, publishTags],
+  );
+
   if (authStatus !== "signed-in") {
     return (
       <section className="ai-panel">
@@ -232,7 +290,52 @@ export function CloudProjectsPanel({
                 <button type="button" disabled={busy} onClick={() => void handleDelete(project.id)}>
                   Delete
                 </button>
+                <button type="button" disabled={busy} onClick={() => handleOpenPublish(project)}>
+                  Publish to Library
+                </button>
               </div>
+              {publishOpenFor === project.id &&
+                (publishStatus === "submitted" ? (
+                  <p className="ai-panel__hint">
+                    Submitted to the community library — awaiting moderation.
+                  </p>
+                ) : (
+                  <div className="cloud-projects-panel__publish">
+                    <input
+                      type="text"
+                      placeholder="Title"
+                      value={publishTitle}
+                      disabled={publishStatus === "submitting"}
+                      onChange={(event) => setPublishTitle(event.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Description"
+                      value={publishDescription}
+                      disabled={publishStatus === "submitting"}
+                      onChange={(event) => setPublishDescription(event.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Tags (comma separated)"
+                      value={publishTags}
+                      disabled={publishStatus === "submitting"}
+                      onChange={(event) => setPublishTags(event.target.value)}
+                    />
+                    <div className="ai-panel__actions">
+                      <button
+                        type="button"
+                        disabled={publishStatus === "submitting" || !publishTitle.trim()}
+                        onClick={() => void handlePublish(project.id)}
+                      >
+                        {publishStatus === "submitting" ? "Publishing…" : "Publish"}
+                      </button>
+                      <button type="button" onClick={() => setPublishOpenFor(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
               {shareInfo?.projectId === project.id && (
                 <p className="ai-panel__hint">
                   Share link:{" "}

@@ -102,9 +102,6 @@ plus `data` on the single-listing/publish/ratings responses. `rating` is
   direct API caller can still approve/reject. `apps/web` now gates its moderation UI on
   `@maker/accounts`'s `role` field (see the note near the top of this README), but this API doesn't
   check it itself.
-- **Publishing straight from a saved `@maker/cloud-projects` project** — right now `apps/web` would
-  need to load the project and re-submit its `data`; a "publish this saved project" shortcut that
-  reads from cloud-projects is a natural follow-up once both have a UI.
 - **Full-text/fuzzy search** — `q` filtering is a plain `ILIKE '%...%'` over title/description, not
   a search index.
 - **Abuse handling for ratings** — no rate limiting, no verified-purchase/verified-use gating; any

@@ -162,6 +162,12 @@ body {
   padding-top: 0.5rem;
 }
 
+.cloud-projects-panel__publish {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .material-db-panel__search,
 .material-db-panel__submit {
   display: flex;
