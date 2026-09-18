@@ -18,6 +18,7 @@ import {
   authenticate,
   createUser,
   EmailAlreadyRegisteredError,
+  findUserById,
   InvalidCredentialsFormatError,
   type User,
 } from "./users.js";
@@ -57,6 +58,7 @@ function redirect(res: ServerResponse, location: string): void {
 
 const OAUTH_START_RE = /^\/oauth\/([^/]+)\/start$/;
 const OAUTH_CALLBACK_RE = /^\/oauth\/([^/]+)\/callback$/;
+const USER_ROLE_RE = /^\/users\/([^/]+)\/role$/;
 
 function userJson(user: User) {
   return {
@@ -199,6 +201,17 @@ export function createServer(pool: Pool = createPool()) {
         }
 
         if (req.method === "GET") {
+          const roleMatch = pathname.match(USER_ROLE_RE);
+          if (roleMatch) {
+            const user = await findUserById(pool, roleMatch[1]!);
+            if (!user) {
+              sendJson(res, 404, { error: "Not found" });
+              return;
+            }
+            sendJson(res, 200, { role: user.role });
+            return;
+          }
+
           const startMatch = pathname.match(OAUTH_START_RE);
           if (startMatch) {
             const providerName = startMatch[1]!;

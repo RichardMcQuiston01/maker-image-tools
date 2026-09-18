@@ -2,19 +2,24 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
+import { startFakeAccounts, type FakeAccounts } from "./fakeAccounts.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 const USER_1 = "11111111-1111-1111-1111-111111111111";
 const REVIEWER = "22222222-2222-2222-2222-222222222222";
+const NON_MODERATOR = "33333333-3333-3333-3333-333333333333";
 
 describe("material-db server", () => {
   let pool: Pool;
   let server: Server;
   let baseUrl: string;
+  let fakeAccounts: FakeAccounts;
 
   beforeAll(async () => {
     pool = requireTestPool();
     await setupTestDb(pool);
+    fakeAccounts = await startFakeAccounts([REVIEWER]);
+    process.env.ACCOUNTS_URL = fakeAccounts.baseUrl;
     server = createServer(pool);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const address = server.address();
@@ -27,6 +32,7 @@ describe("material-db server", () => {
   afterAll(async () => {
     server.close();
     await pool.end();
+    await fakeAccounts.close();
   });
 
   beforeEach(async () => {
@@ -123,6 +129,19 @@ describe("material-db server", () => {
     const body = await response.json();
     expect(body.preset.status).toBe("rejected");
     expect(body.preset.reviewNotes).toBe("unsafe");
+  });
+
+  it("rejects an approve/reject attempt from a reviewerId that isn't a moderator", async () => {
+    const created = await (await submit()).json();
+    const response = await fetch(`${baseUrl}/presets/${created.preset.id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewerId: NON_MODERATOR }),
+    });
+    expect(response.status).toBe(403);
+
+    const pending = await fetch(`${baseUrl}/presets/pending`);
+    expect((await pending.json()).presets).toHaveLength(1);
   });
 
   it("returns 409 when reviewing an already-reviewed preset", async () => {

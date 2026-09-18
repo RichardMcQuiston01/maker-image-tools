@@ -58,6 +58,13 @@ export DATABASE_URL=postgres://maker:maker@localhost:5432/maker_accounts
 | `GET /me`                       | —                     | `Authorization: Bearer <token>` | `200 { user }` / `401` if invalid/expired                                        |
 | `GET /oauth/:provider/start`    | —                     | —                               | `302` to the provider's consent page / `404` unknown provider                    |
 | `GET /oauth/:provider/callback` | —                     | —                               | `302` back to `WEB_APP_URL` with `?token=` or `?error=` / `404` unknown provider |
+| `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                           |
+
+`GET /users/:id/role` is server-to-server: `apps/community-library` and `apps/material-db` call it
+to verify a caller-supplied `reviewerId` actually belongs to a `moderator` before honoring an
+approve/reject request. It's intentionally unauthenticated (like every other cross-service call in
+this repo) — the id itself, not a bearer token, is the input, and this repo's services already
+trust each other's plain ids everywhere else.
 
 `user` is `{ id, email, planTier, role, createdAt }`. Sessions are bearer tokens (not cookies): the
 client is expected to hold the token (e.g. in memory or `localStorage`) and send it as
