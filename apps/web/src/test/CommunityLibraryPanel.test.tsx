@@ -170,6 +170,111 @@ describe("CommunityLibraryPanel", () => {
     });
   });
 
+  it("includes a comment when submitting a rating with one entered", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        listings: [
+          {
+            id: "l1",
+            userId: OTHER_USER_ID,
+            title: "Fox Keychain",
+            description: null,
+            tags: [],
+            ratingAvg: null,
+            ratingCount: 0,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        rating: {
+          id: "r1",
+          listingId: "l1",
+          userId: SIGNED_IN_USER.id,
+          stars: 4,
+          comment: "Cuts cleanly!",
+        },
+        listing: {
+          id: "l1",
+          userId: OTHER_USER_ID,
+          title: "Fox Keychain",
+          description: null,
+          tags: [],
+          ratingAvg: 4,
+          ratingCount: 1,
+        },
+      }),
+    );
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+    fireEvent.change(await screen.findByPlaceholderText("Comment (optional)"), {
+      target: { value: "Cuts cleanly!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [, init] = fetchMock.mock.calls[2]!;
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      userId: SIGNED_IN_USER.id,
+      stars: 5,
+      comment: "Cuts cleanly!",
+    });
+  });
+
+  it("fetches and shows the individual reviews when toggled", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        listings: [
+          {
+            id: "l1",
+            userId: OTHER_USER_ID,
+            title: "Fox Keychain",
+            description: null,
+            tags: [],
+            ratingAvg: 4.5,
+            ratingCount: 2,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        ratings: [
+          {
+            id: "r1",
+            listingId: "l1",
+            userId: OTHER_USER_ID,
+            stars: 5,
+            comment: "Great fit!",
+            createdAt: "2026-01-02T00:00:00Z",
+          },
+          {
+            id: "r2",
+            listingId: "l1",
+            userId: "33333333-3333-3333-3333-333333333333",
+            stars: 4,
+            comment: null,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show reviews (2)" }));
+
+    expect(await screen.findByText("Great fit!")).toBeInTheDocument();
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("/listings/l1/ratings");
+    expect(screen.getByRole("button", { name: "Hide reviews" })).toBeInTheDocument();
+  });
+
   it("shows a delete button only for the signed-in user's own listing", async () => {
     window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);

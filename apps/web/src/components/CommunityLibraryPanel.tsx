@@ -13,6 +13,15 @@ interface ListingSummary {
   ratingCount: number;
 }
 
+interface Rating {
+  id: string;
+  listingId: string;
+  userId: string;
+  stars: number;
+  comment: string | null;
+  createdAt: string;
+}
+
 interface CommunityLibraryPanelProps {
   document: VectorDocument;
   onLoadDocument: (doc: VectorDocument) => void;
@@ -29,6 +38,10 @@ export function CommunityLibraryPanel({
   const [sort, setSort] = useState<"newest" | "rating">("newest");
   const [results, setResults] = useState<ListingSummary[]>([]);
   const [ratingDrafts, setRatingDrafts] = useState<Record<string, number>>({});
+  const [ratingComments, setRatingComments] = useState<Record<string, string>>({});
+  const [ratingsByListing, setRatingsByListing] = useState<Record<string, Rating[]>>({});
+  const [openRatings, setOpenRatings] = useState<Record<string, boolean>>({});
+  const [ratingsLoading, setRatingsLoading] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,17 +99,46 @@ export function CommunityLibraryPanel({
     [onLoadDocument],
   );
 
+  const fetchRatings = useCallback(async (id: string) => {
+    try {
+      setRatingsLoading((current) => ({ ...current, [id]: true }));
+      const response = await fetch(`${COMMUNITY_LIBRARY_URL}/listings/${id}/ratings`);
+      if (!response.ok) {
+        throw new Error(`Community library responded with ${response.status}`);
+      }
+      const body = (await response.json()) as { ratings: Rating[] };
+      setRatingsByListing((current) => ({ ...current, [id]: body.ratings }));
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `${err.message} (is the @maker/community-library dev server running?)`
+          : "Failed to load reviews",
+      );
+    } finally {
+      setRatingsLoading((current) => ({ ...current, [id]: false }));
+    }
+  }, []);
+
+  const handleToggleRatings = useCallback(
+    (id: string) => {
+      setOpenRatings((current) => ({ ...current, [id]: !current[id] }));
+      if (!ratingsByListing[id]) void fetchRatings(id);
+    },
+    [ratingsByListing, fetchRatings],
+  );
+
   const handleRate = useCallback(
     async (id: string) => {
       if (!user) return;
       const stars = ratingDrafts[id] ?? 5;
+      const comment = ratingComments[id]?.trim();
       try {
         setBusy(true);
         setError(null);
         const response = await fetch(`${COMMUNITY_LIBRARY_URL}/listings/${id}/ratings`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id, stars }),
+          body: JSON.stringify({ userId: user.id, stars, ...(comment ? { comment } : {}) }),
         });
         if (!response.ok) {
           throw new Error(`Rating failed with ${response.status}`);
@@ -105,6 +147,7 @@ export function CommunityLibraryPanel({
         setResults((current) =>
           current.map((listing) => (listing.id === id ? body.listing : listing)),
         );
+        if (ratingsByListing[id]) void fetchRatings(id);
       } catch (err) {
         setError(
           err instanceof Error
@@ -115,7 +158,7 @@ export function CommunityLibraryPanel({
         setBusy(false);
       }
     },
-    [user, ratingDrafts],
+    [user, ratingDrafts, ratingComments, ratingsByListing, fetchRatings],
   );
 
   const handleDelete = useCallback(
@@ -250,6 +293,17 @@ export function CommunityLibraryPanel({
                         }))
                       }
                     />
+                    <input
+                      type="text"
+                      placeholder="Comment (optional)"
+                      value={ratingComments[listing.id] ?? ""}
+                      onChange={(event) =>
+                        setRatingComments((current) => ({
+                          ...current,
+                          [listing.id]: event.target.value,
+                        }))
+                      }
+                    />
                     <button
                       type="button"
                       disabled={busy}
@@ -268,7 +322,30 @@ export function CommunityLibraryPanel({
                     Delete
                   </button>
                 )}
+                {listing.ratingCount > 0 && (
+                  <button type="button" onClick={() => handleToggleRatings(listing.id)}>
+                    {openRatings[listing.id]
+                      ? "Hide reviews"
+                      : `Show reviews (${listing.ratingCount})`}
+                  </button>
+                )}
               </div>
+              {openRatings[listing.id] &&
+                (ratingsLoading[listing.id] ? (
+                  <p className="ai-panel__hint">Loading reviews…</p>
+                ) : (
+                  <ul className="community-library-panel__review-list">
+                    {(ratingsByListing[listing.id] ?? []).map((rating) => (
+                      <li key={rating.id}>
+                        <span>
+                          {"★".repeat(rating.stars)}
+                          {"☆".repeat(5 - rating.stars)}
+                        </span>
+                        {rating.comment && <p>{rating.comment}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                ))}
             </li>
           ))}
         </ul>
