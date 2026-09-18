@@ -13,6 +13,17 @@ interface Preset {
   notes: string | null;
 }
 
+interface PresetVersion {
+  id: string;
+  speed: number;
+  power: number;
+  passes: number;
+  notes: string | null;
+  status: "pending" | "approved" | "rejected";
+  version: number;
+  createdAt: string;
+}
+
 interface MaterialDbPanelProps {
   onApplyPreset: (speed: number, power: number, passes: number) => void;
 }
@@ -26,6 +37,9 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
   const [results, setResults] = useState<Preset[]>([]);
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [historyByPreset, setHistoryByPreset] = useState<Record<string, PresetVersion[]>>({});
+  const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({});
+  const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
 
   const [submitMaterial, setSubmitMaterial] = useState("");
   const [submitMachineType, setSubmitMachineType] = useState("");
@@ -59,6 +73,36 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
       );
     }
   }, [material, machineType, operation]);
+
+  const handleToggleHistory = useCallback(
+    async (preset: Preset) => {
+      setOpenHistory((current) => ({ ...current, [preset.id]: !current[preset.id] }));
+      if (historyByPreset[preset.id]) return;
+      try {
+        setHistoryLoading((current) => ({ ...current, [preset.id]: true }));
+        const params = new URLSearchParams({
+          material: preset.material,
+          machineType: preset.machineType,
+          operation: preset.operation,
+        });
+        const response = await fetch(`${MATERIAL_DB_URL}/presets/history?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error(`Material database responded with ${response.status}`);
+        }
+        const body = (await response.json()) as { presets: PresetVersion[] };
+        setHistoryByPreset((current) => ({ ...current, [preset.id]: body.presets }));
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/material-db dev server running?)`
+            : "Failed to load preset history",
+        );
+      } finally {
+        setHistoryLoading((current) => ({ ...current, [preset.id]: false }));
+      }
+    },
+    [historyByPreset],
+  );
 
   const handleSubmit = useCallback(async () => {
     if (!user || !submitMaterial.trim() || !submitMachineType.trim() || !submitOperation.trim()) {
@@ -140,16 +184,41 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
         <ul className="material-db-panel__results">
           {results.map((preset) => (
             <li key={preset.id}>
-              <span>
-                {preset.material} — {preset.machineType} — {preset.operation} (speed {preset.speed},
-                power {preset.power})
-              </span>
-              <button
-                type="button"
-                onClick={() => onApplyPreset(preset.speed, preset.power, preset.passes)}
-              >
-                Apply
-              </button>
+              <div className="material-db-panel__result-row">
+                <span>
+                  {preset.material} — {preset.machineType} — {preset.operation} (speed{" "}
+                  {preset.speed}, power {preset.power})
+                </span>
+                <div className="ai-panel__actions">
+                  <button
+                    type="button"
+                    onClick={() => onApplyPreset(preset.speed, preset.power, preset.passes)}
+                  >
+                    Apply
+                  </button>
+                  <button type="button" onClick={() => void handleToggleHistory(preset)}>
+                    {openHistory[preset.id] ? "Hide history" : "Show history"}
+                  </button>
+                </div>
+              </div>
+              {openHistory[preset.id] &&
+                (historyLoading[preset.id] ? (
+                  <p className="ai-panel__hint">Loading history…</p>
+                ) : (
+                  <ul className="material-db-panel__history-list">
+                    {(historyByPreset[preset.id] ?? []).map((entry) => (
+                      <li key={entry.id}>
+                        <span>
+                          v{entry.version} ({entry.status}) — speed {entry.speed}, power{" "}
+                          {entry.power}
+                          {entry.passes !== 1 ? `, ${entry.passes} passes` : ""} —{" "}
+                          {new Date(entry.createdAt).toLocaleDateString()}
+                        </span>
+                        {entry.notes && <p>{entry.notes}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                ))}
             </li>
           ))}
         </ul>

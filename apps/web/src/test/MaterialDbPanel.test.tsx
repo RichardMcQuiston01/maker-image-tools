@@ -135,4 +135,68 @@ describe("MaterialDbPanel", () => {
     });
     expect(await screen.findByText(/awaiting moderation/)).toBeInTheDocument();
   });
+
+  it("fetches and shows preset history when toggled", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        presets: [
+          {
+            id: "1",
+            material: "baltic birch plywood 3mm",
+            machineType: "diode-laser",
+            operation: "cut",
+            speed: 300,
+            power: 950,
+            passes: 2,
+            notes: null,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        presets: [
+          {
+            id: "1",
+            speed: 300,
+            power: 950,
+            passes: 2,
+            notes: null,
+            status: "approved",
+            version: 2,
+            createdAt: "2026-01-02T00:00:00Z",
+          },
+          {
+            id: "0",
+            speed: 250,
+            power: 900,
+            passes: 1,
+            notes: "First attempt, ran a bit slow.",
+            status: "rejected",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <MaterialDbPanel onApplyPreset={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show history" }));
+
+    expect(await screen.findByText("First attempt, ran a bit slow.")).toBeInTheDocument();
+    expect(screen.getByText(/v1 \(rejected\)/)).toBeInTheDocument();
+    expect(screen.getByText(/v2 \(approved\)/)).toBeInTheDocument();
+    const [url] = fetchMock.mock.calls[1]!;
+    expect(String(url)).toContain("/presets/history");
+    expect(String(url)).toContain("material=baltic+birch+plywood+3mm");
+    expect(String(url)).toContain("machineType=diode-laser");
+    expect(String(url)).toContain("operation=cut");
+    expect(screen.getByRole("button", { name: "Hide history" })).toBeInTheDocument();
+  });
 });

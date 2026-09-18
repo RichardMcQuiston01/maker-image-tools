@@ -181,11 +181,36 @@ body {
 
 .material-db-panel__results li {
   display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-top: 1px solid light-dark(#eee, #2a2a2a);
+  padding-top: 0.5rem;
+}
+
+.material-db-panel__result-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  border-top: 1px solid light-dark(#eee, #2a2a2a);
-  padding-top: 0.5rem;
+}
+
+.material-db-panel__history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0 0;
+}
+
+.material-db-panel__history-list li {
+  border-top: 1px dashed light-dark(#eee, #2a2a2a);
+  padding-top: 0.35rem;
+}
+
+.material-db-panel__history-list p {
+  margin: 0.15rem 0 0;
+  color: light-dark(#444, #ccc);
 }
 
 .community-library-panel__search,
