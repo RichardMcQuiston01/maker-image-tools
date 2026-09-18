@@ -3,23 +3,28 @@ import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
 import type { ObjectStore } from "../src/objectStorage.js";
+import { startFakeAccounts, type FakeAccounts } from "./fakeAccounts.js";
 import { createFakeObjectStore } from "./fakeS3.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 const USER_1 = "11111111-1111-1111-1111-111111111111";
 const USER_2 = "22222222-2222-2222-2222-222222222222";
 const REVIEWER = "33333333-3333-3333-3333-333333333333";
+const NON_MODERATOR = "44444444-4444-4444-4444-444444444444";
 
 describe("community-library server", () => {
   let pool: Pool;
   let store: ObjectStore;
   let server: Server;
   let baseUrl: string;
+  let fakeAccounts: FakeAccounts;
 
   beforeAll(async () => {
     pool = requireTestPool();
     await setupTestDb(pool);
     store = createFakeObjectStore();
+    fakeAccounts = await startFakeAccounts([REVIEWER]);
+    process.env.ACCOUNTS_URL = fakeAccounts.baseUrl;
     server = createServer(pool, store);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const address = server.address();
@@ -32,6 +37,7 @@ describe("community-library server", () => {
   afterAll(async () => {
     server.close();
     await pool.end();
+    await fakeAccounts.close();
   });
 
   beforeEach(async () => {
@@ -123,6 +129,19 @@ describe("community-library server", () => {
     });
     expect(response.status).toBe(200);
     expect((await response.json()).listing.status).toBe("rejected");
+  });
+
+  it("rejects an approve/reject attempt from a reviewerId that isn't a moderator", async () => {
+    const created = await (await publish()).json();
+    const response = await fetch(`${baseUrl}/listings/${created.listing.id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewerId: NON_MODERATOR }),
+    });
+    expect(response.status).toBe(403);
+
+    const pending = await fetch(`${baseUrl}/listings/pending`);
+    expect((await pending.json()).listings).toHaveLength(1);
   });
 
   it("returns 409 when reviewing an already-reviewed listing", async () => {

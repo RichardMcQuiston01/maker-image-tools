@@ -137,6 +137,20 @@ describe("accounts server", () => {
     expect(me.status).toBe(401);
   });
 
+  it("reports a user's role for a sibling service to verify", async () => {
+    const signupResponse = await signup("ada@example.com", "hunter22222");
+    const { user } = await signupResponse.json();
+
+    const response = await fetch(`${baseUrl}/users/${user.id}/role`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ role: "user" });
+  });
+
+  it("returns 404 for the role of an unknown user id", async () => {
+    const response = await fetch(`${baseUrl}/users/00000000-0000-0000-0000-000000000000/role`);
+    expect(response.status).toBe(404);
+  });
+
   it("rejects a request body that isn't valid JSON with 400", async () => {
     const response = await fetch(`${baseUrl}/signup`, {
       method: "POST",

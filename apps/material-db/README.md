@@ -7,15 +7,19 @@ own workspace app rather than a separate repo — see `ROADMAP.md` §8 for why. 
 seed — see "Seeding from `packages/material-library`" below.
 
 Like `@maker/billing`/`@maker/cloud-projects`, this service trusts the caller (`apps/web`, having
-already authenticated against `@maker/accounts`) to pass the correct `userId`/`reviewerId` — it
-doesn't itself validate bearer tokens or session cookies, or the caller's role. `@maker/accounts`
-now has a `role` field (`user`/`moderator`, see its README's "Roles" section), and `apps/web` uses
-it to decide who sees the moderation UI (its `ModerationPanel` only shows this service's pending
-presets and Approve/Reject actions to a signed-in user whose `role` is `moderator`) and therefore
-who ever calls `/presets/:id/approve`/`/reject` in practice. That's a client-side gate, consistent
-with this service's existing trust model for `userId`/`reviewerId` generally — it is not enforced
-by this API itself, so a direct API call can still pass any `reviewerId` (see "What's not here
-yet").
+already authenticated against `@maker/accounts`) to pass the correct `userId` — it doesn't itself
+validate bearer tokens or session cookies. `reviewerId` is different: `@maker/accounts` has a `role`
+field (`user`/`moderator`, see its README's "Roles" section), and `POST /presets/:id/approve`/`/reject`
+call `@maker/accounts`'s `GET /users/:id/role` synchronously to verify `reviewerId` actually belongs
+to a moderator before honoring the request — a `403` otherwise. This is the one synchronous
+service-to-service call in this repo; every other cross-service need funnels through `apps/web`
+instead. It was worth the exception here because the alternative was no real enforcement at all:
+`apps/web`'s `ModerationPanel` already hides the Approve/Reject UI from non-moderators, but that's
+just a client-side convenience — nothing stopped a direct API call from passing any `reviewerId`
+before this. The tradeoff is an extra network round-trip per approve/reject call (infrequent,
+moderator-only actions, so the added latency doesn't matter) and a new runtime dependency on
+`@maker/accounts` being reachable (see `ACCOUNTS_URL` below) — a `@maker/accounts` outage now makes
+moderation fail closed (`500`) rather than silently succeeding.
 
 ## Running
 
@@ -42,14 +46,15 @@ own migrations first, same as `dev`/`start`.
 
 ## Environment variables
 
-| Variable       | Required | Default | Used by                                                                                      |
-| -------------- | -------- | ------- | -------------------------------------------------------------------------------------------- |
-| `PORT`         | no       | `8791`  | server listen port                                                                           |
-| `DATABASE_URL` | yes      | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_material_db` |
+| Variable       | Required | Default | Used by                                                                                                                      |
+| -------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`         | no       | `8791`  | server listen port                                                                                                           |
+| `DATABASE_URL` | yes      | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_material_db`                                 |
+| `ACCOUNTS_URL` | yes      | —       | `@maker/accounts`'s base URL, e.g. `http://localhost:8788` — used by `/presets/:id/approve`/`/reject` to verify `reviewerId` |
 
-Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
-missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
-be mistaken for a working configuration.
+Without `DATABASE_URL` (or `ACCOUNTS_URL`) set, every request responds `500` with a message
+explaining what's missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent
+fallback that could be mistaken for a working configuration.
 
 ## Local Postgres
 
@@ -79,15 +84,15 @@ is ever deleted or overwritten — that's the "versioned" part.
 
 ## API
 
-| Route                       | Body / Query                                                                  | Response                                                                 |
-| --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `POST /presets`             | `{ userId, material, machineType, operation, speed, power, passes?, notes? }` | `201 { preset }` (status `pending`) / `400` for invalid input            |
-| `GET /presets`              | `?material=&machineType=&operation=` (all optional)                           | `200 { presets }` — current approved preset per matching key             |
-| `GET /presets/pending`      | —                                                                             | `200 { presets }` — awaiting moderation, oldest first                    |
-| `GET /presets/history`      | `?material=&machineType=&operation=` (all required)                           | `200 { presets }` — every version for that exact key, newest first       |
-| `GET /presets/:id`          | —                                                                             | `200 { preset }` / `404`                                                 |
-| `POST /presets/:id/approve` | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `approved`) / `404` / `409` if already reviewed |
-| `POST /presets/:id/reject`  | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `rejected`) / `404` / `409` if already reviewed |
+| Route                       | Body / Query                                                                  | Response                                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `POST /presets`             | `{ userId, material, machineType, operation, speed, power, passes?, notes? }` | `201 { preset }` (status `pending`) / `400` for invalid input                                                      |
+| `GET /presets`              | `?material=&machineType=&operation=` (all optional)                           | `200 { presets }` — current approved preset per matching key                                                       |
+| `GET /presets/pending`      | —                                                                             | `200 { presets }` — awaiting moderation, oldest first                                                              |
+| `GET /presets/history`      | `?material=&machineType=&operation=` (all required)                           | `200 { presets }` — every version for that exact key, newest first                                                 |
+| `GET /presets/:id`          | —                                                                             | `200 { preset }` / `404`                                                                                           |
+| `POST /presets/:id/approve` | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `approved`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed |
+| `POST /presets/:id/reject`  | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `rejected`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed |
 
 `preset` is `{ id, material, machineType, operation, speed, power, passes, notes, status, version, submittedBy, reviewedBy, reviewedAt, reviewNotes, createdAt }`.
 `speed` is mm/min, `power` a 0-1000 S-value — matching `packages/material-library`'s `MaterialPreset`
@@ -95,10 +100,6 @@ so a future seed migration is a straight field mapping.
 
 ## What's not here yet
 
-- **API-level moderator role enforcement** — `reviewerId` is trusted as-is by this service; any
-  direct API caller can still approve/reject. `apps/web` now gates its moderation UI on
-  `@maker/accounts`'s `role` field (see the note near the top of this README), but this API doesn't
-  check it itself.
 - **Duplicate-submission detection / voting** — two users submitting near-identical settings for the
   same key just creates two versions; there's no "this matches an existing preset" nudge or
   upvote/downvote signal yet.

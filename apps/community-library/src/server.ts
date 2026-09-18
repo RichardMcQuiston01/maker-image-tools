@@ -17,8 +17,12 @@ import {
   publishListing,
   rejectListing,
 } from "./listings.js";
+import { AccountsConfigError, isModerator, ModeratorVerificationError } from "./moderatorAuth.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import { InvalidRatingInputError, listRatings, rateListing } from "./ratings.js";
+
+/** Thrown when a caller-supplied reviewerId doesn't belong to a moderator. */
+export class NotAModeratorError extends Error {}
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -107,8 +111,15 @@ function requireQueryParam(url: URL, field: string): string {
 }
 
 function errorStatus(err: unknown): number {
-  if (err instanceof DatabaseConfigError || err instanceof ObjectStorageConfigError) return 500;
+  if (
+    err instanceof DatabaseConfigError ||
+    err instanceof ObjectStorageConfigError ||
+    err instanceof AccountsConfigError ||
+    err instanceof ModeratorVerificationError
+  )
+    return 500;
   if (err instanceof InvalidListingInputError || err instanceof InvalidRatingInputError) return 400;
+  if (err instanceof NotAModeratorError) return 403;
   if (err instanceof ListingNotFoundError) return 404;
   if (err instanceof ListingNotPendingError) return 409;
   const message = err instanceof Error ? err.message : "";
@@ -182,10 +193,14 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
         const approveMatch = pathname.match(APPROVE_RE);
         if (approveMatch && req.method === "POST") {
           const body = await parseJsonBody(req);
+          const reviewerId = requireString(body, "reviewerId");
+          if (!(await isModerator(reviewerId))) {
+            throw new NotAModeratorError(`"reviewerId" (${reviewerId}) is not a moderator`);
+          }
           const listing = await approveListing(
             pool,
             approveMatch[1]!,
-            requireString(body, "reviewerId"),
+            reviewerId,
             optionalString(body, "notes"),
           );
           sendJson(res, 200, { listing });
@@ -195,10 +210,14 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
         const rejectMatch = pathname.match(REJECT_RE);
         if (rejectMatch && req.method === "POST") {
           const body = await parseJsonBody(req);
+          const reviewerId = requireString(body, "reviewerId");
+          if (!(await isModerator(reviewerId))) {
+            throw new NotAModeratorError(`"reviewerId" (${reviewerId}) is not a moderator`);
+          }
           const listing = await rejectListing(
             pool,
             rejectMatch[1]!,
-            requireString(body, "reviewerId"),
+            reviewerId,
             optionalString(body, "notes"),
           );
           sendJson(res, 200, { listing });
