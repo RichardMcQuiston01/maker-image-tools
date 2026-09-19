@@ -5,6 +5,7 @@ import {
 } from "node:http";
 import type { Pool } from "pg";
 import { AccountsConfigError, SessionVerificationError, verifySession } from "./accountsAuth.js";
+import { BillingConfigError, BillingVerificationError, getPlanTier } from "./billingClient.js";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import {
@@ -16,9 +17,11 @@ import {
   InvalidProjectInputError,
   listProjects,
   ProjectNotFoundError,
+  QuotaExceededError,
   revokeShareLink,
   updateProject,
 } from "./projects.js";
+import { quotaForPlanTier } from "./quotas.js";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -116,11 +119,14 @@ function errorStatus(err: unknown): number {
     err instanceof DatabaseConfigError ||
     err instanceof ObjectStorageConfigError ||
     err instanceof AccountsConfigError ||
-    err instanceof SessionVerificationError
+    err instanceof SessionVerificationError ||
+    err instanceof BillingConfigError ||
+    err instanceof BillingVerificationError
   )
     return 500;
   if (err instanceof InvalidProjectInputError) return 400;
   if (err instanceof ProjectNotFoundError) return 404;
+  if (err instanceof QuotaExceededError) return 402;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
   if (
@@ -159,12 +165,14 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
           const userId = await requireAuthenticatedUserId(req, res);
           if (!userId) return;
           const body = await parseJsonBody(req);
+          const quota = quotaForPlanTier(await getPlanTier(userId));
           const project = await createProject(
             pool,
             store,
             userId,
             requireString(body, "name"),
             body.data,
+            quota,
           );
           sendJson(res, 201, { project });
           return;
@@ -217,10 +225,15 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
             const userId = await requireAuthenticatedUserId(req, res);
             if (!userId) return;
             const body = await parseJsonBody(req);
-            const project = await updateProject(pool, store, userId, projectId, {
-              name: optionalString(body, "name"),
-              data: body.data,
-            });
+            const quota = quotaForPlanTier(await getPlanTier(userId));
+            const project = await updateProject(
+              pool,
+              store,
+              userId,
+              projectId,
+              { name: optionalString(body, "name"), data: body.data },
+              quota,
+            );
             sendJson(res, 200, { project });
             return;
           }

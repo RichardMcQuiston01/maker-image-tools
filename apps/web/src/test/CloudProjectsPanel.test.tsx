@@ -104,6 +104,29 @@ describe("CloudProjectsPanel", () => {
     expect(await screen.findByText("New Project")).toBeInTheDocument();
   });
 
+  it("shows the server's quota error message when saving fails with 402", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { projects: [] }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(402, { error: "Plan limit reached: at most 10 projects allowed" }),
+    );
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    const nameInput = await screen.findByPlaceholderText("Project name");
+    fireEvent.change(nameInput, { target: { value: "New Project" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Plan limit reached: at most 10 projects allowed"),
+    ).toBeInTheDocument();
+  });
+
   it("loads a project and calls onLoadDocument with its data", async () => {
     window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);
