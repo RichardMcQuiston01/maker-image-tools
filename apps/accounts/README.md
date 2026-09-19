@@ -1,7 +1,7 @@
 # @maker/accounts
 
 User identity for the platform-growth services introduced in `ROADMAP.md` Stage 6: email/password
-signup and login, OAuth login (Google/GitHub), bearer-token sessions, a `planTier` field for
+signup and login, OAuth login (Google/GitHub/Discord), bearer-token sessions, a `planTier` field for
 `@maker/billing` to manage, and a `role` field (`user`/`moderator`) other services can use to gate
 privileged actions — currently consumed by `apps/web`'s moderation UI for
 `@maker/community-library`/`@maker/material-db`. Lives in this monorepo as its own workspace app
@@ -18,25 +18,27 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 
 ## Environment variables
 
-| Variable               | Required              | Default | Used by                                                                                   |
-| ---------------------- | --------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `PORT`                 | no                    | `8788`  | server listen port                                                                        |
-| `DATABASE_URL`         | yes                   | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_accounts` |
-| `MODERATOR_EMAILS`     | no                    | —       | comma-separated emails to auto-promote to the `moderator` role (see below)                |
-| `ACCOUNTS_BASE_URL`    | yes, for OAuth        | —       | this service's own publicly reachable base URL, used to build the OAuth `redirect_uri`    |
-| `WEB_APP_URL`          | yes, for OAuth        | —       | `apps/web`'s origin; the OAuth callback redirects here with a token (or an error)         |
-| `GOOGLE_CLIENT_ID`     | yes, for Google login | —       | Google OAuth app client ID                                                                |
-| `GOOGLE_CLIENT_SECRET` | yes, for Google login | —       | Google OAuth app client secret                                                            |
-| `GITHUB_CLIENT_ID`     | yes, for GitHub login | —       | GitHub OAuth app client ID                                                                |
-| `GITHUB_CLIENT_SECRET` | yes, for GitHub login | —       | GitHub OAuth app client secret                                                            |
+| Variable                | Required               | Default | Used by                                                                                   |
+| ----------------------- | ---------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `PORT`                  | no                     | `8788`  | server listen port                                                                        |
+| `DATABASE_URL`          | yes                    | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_accounts` |
+| `MODERATOR_EMAILS`      | no                     | —       | comma-separated emails to auto-promote to the `moderator` role (see below)                |
+| `ACCOUNTS_BASE_URL`     | yes, for OAuth         | —       | this service's own publicly reachable base URL, used to build the OAuth `redirect_uri`    |
+| `WEB_APP_URL`           | yes, for OAuth         | —       | `apps/web`'s origin; the OAuth callback redirects here with a token (or an error)         |
+| `GOOGLE_CLIENT_ID`      | yes, for Google login  | —       | Google OAuth app client ID                                                                |
+| `GOOGLE_CLIENT_SECRET`  | yes, for Google login  | —       | Google OAuth app client secret                                                            |
+| `GITHUB_CLIENT_ID`      | yes, for GitHub login  | —       | GitHub OAuth app client ID                                                                |
+| `GITHUB_CLIENT_SECRET`  | yes, for GitHub login  | —       | GitHub OAuth app client secret                                                            |
+| `DISCORD_CLIENT_ID`     | yes, for Discord login | —       | Discord OAuth app client ID                                                               |
+| `DISCORD_CLIENT_SECRET` | yes, for Discord login | —       | Discord OAuth app client secret                                                           |
 
 Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
 missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
-be mistaken for a working configuration. The two OAuth providers fail the same way, independently:
+be mistaken for a working configuration. Each OAuth provider fails the same way, independently:
 signing up/logging in with email/password works with none of the OAuth variables set; hitting
-`/oauth/google/...` without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (or `/oauth/github/...`
-without their GitHub equivalents) responds `500`, and either provider also needs
-`ACCOUNTS_BASE_URL`/`WEB_APP_URL` set to complete a login.
+`/oauth/google/...` without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (or `/oauth/github/...`/
+`/oauth/discord/...` without their GitHub/Discord equivalents) responds `500`, and every provider
+also needs `ACCOUNTS_BASE_URL`/`WEB_APP_URL` set to complete a login.
 
 ## Local Postgres
 
@@ -107,7 +109,7 @@ themselves by checking the `role` on the authenticated user — this service doe
 separate authorization check, and none of the other Stage 6 services validate it either. See
 `@maker/community-library`'s README for how its moderation actions are currently gated on this.
 
-## OAuth login (Google/GitHub)
+## OAuth login (Google/GitHub/Discord)
 
 `GET /oauth/:provider/start` redirects the browser to the provider's consent page (authorization
 code + PKCE); the provider then redirects back to `GET /oauth/:provider/callback`, which exchanges
@@ -128,14 +130,15 @@ a secret generated once per server process - enough to detect tampering and expi
 without a database table or an extra required env var, since it only needs to survive one browser
 round trip within a single process's uptime.
 
-**Testing note:** there's no way to register a real Google/GitHub OAuth app or reach either
+**Testing note:** there's no way to register a real Google/GitHub/Discord OAuth app or reach any
 provider's servers from this sandbox, so `test/oauth.test.ts` runs the exact same code path against
 a tiny local fake HTTP provider (`test/fakeOAuthProvider.ts`) instead, via each provider's URL
-override env vars (e.g. `GOOGLE_TOKEN_URL`, `GITHUB_API_BASE_URL`) - real PKCE/state validation,
-real token exchange, real account creation/linking, just pointed at localhost instead of Google or
-GitHub. What that can't cover is the real provider's own consent screen and redirect behavior; a
-deployment enabling this needs to register a real OAuth app (redirect URI
-`<ACCOUNTS_BASE_URL>/oauth/<provider>/callback`) and try the full round trip by hand at least once.
+override env vars (e.g. `GOOGLE_TOKEN_URL`, `GITHUB_API_BASE_URL`, `DISCORD_API_BASE_URL`) - real
+PKCE/state validation, real token exchange, real account creation/linking, just pointed at
+localhost instead of the real provider. What that can't cover is the real provider's own consent
+screen and redirect behavior; a deployment enabling one needs to register a real OAuth app
+(redirect URI `<ACCOUNTS_BASE_URL>/oauth/<provider>/callback`) and try the full round trip by hand
+at least once.
 
 ## What's not here yet
 
@@ -143,8 +146,9 @@ deployment enabling this needs to register a real OAuth app (redirect URI
 - **Adding a password to an OAuth-only account, or linking a second OAuth provider from a signed-in
   session** — both are only possible today by signing in with an email that matches an existing
   account, which links automatically; there's no explicit "connect another provider" action.
-- **Providers beyond Google/GitHub** — `oauth.ts`'s `OAuthProvider` shape is provider-agnostic
-  (any provider is just a new factory function keyed by name), but only these two are wired up.
+- **Providers beyond Google/GitHub/Discord** — `oauth.ts`'s `OAuthProvider` shape is
+  provider-agnostic (any provider is just a new factory function keyed by name), but only these
+  three are wired up.
 
 ## Testing note
 

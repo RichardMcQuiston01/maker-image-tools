@@ -1,15 +1,15 @@
 import { createServer, type Server } from "node:http";
 
 /**
- * A tiny local HTTP server standing in for a real OAuth provider (Google or
- * GitHub) - there's no way to register a real OAuth app or reach a real
- * provider's servers from this sandbox, so this is what `GOOGLE_TOKEN_URL`/
- * `GOOGLE_USERINFO_URL` (or their GitHub equivalents) get pointed at in
- * tests instead. Unlike the SDK-level fakes elsewhere in this repo
- * (`fakeStripe.ts`, `fakeS3.ts`), these providers are plain REST over HTTP
- * with no SDK to intercept, so a real (if tiny) HTTP server is the
- * simplest way to exercise the real token-exchange/userinfo-fetch code
- * paths end to end.
+ * A tiny local HTTP server standing in for a real OAuth provider (Google,
+ * GitHub, or Discord) - there's no way to register a real OAuth app or reach
+ * a real provider's servers from this sandbox, so this is what
+ * `GOOGLE_TOKEN_URL`/`GOOGLE_USERINFO_URL` (or their GitHub/Discord
+ * equivalents) get pointed at in tests instead. Unlike the SDK-level fakes
+ * elsewhere in this repo (`fakeStripe.ts`, `fakeS3.ts`), these providers are
+ * plain REST over HTTP with no SDK to intercept, so a real (if tiny) HTTP
+ * server is the simplest way to exercise the real token-exchange/userinfo-fetch
+ * code paths end to end.
  */
 export interface FakeOAuthProviderOptions {
   accessToken?: string;
@@ -20,6 +20,8 @@ export interface FakeOAuthProviderOptions {
   githubUser?: { id: number; email: string | null };
   /** GitHub-shaped `GET /user/emails` response, used when `githubUser.email` is null. */
   githubEmails?: Array<{ email: string; primary: boolean; verified: boolean }>;
+  /** Discord-shaped `GET /users/@me` response. */
+  discordUser?: { id: string; email: string; verified: boolean };
 }
 
 export interface FakeOAuthProvider {
@@ -68,6 +70,20 @@ export async function startFakeOAuthProvider(
     if (req.method === "GET" && url.pathname === "/user/emails") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(options.githubEmails ?? []));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/users/@me") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify(
+          options.discordUser ?? {
+            id: "fake-discord-id",
+            email: "fake@example.com",
+            verified: true,
+          },
+        ),
+      );
       return;
     }
 

@@ -70,6 +70,7 @@ export function AuthPanel() {
       <div className="auth-panel__oauth">
         <a href={`${ACCOUNTS_URL}/oauth/google/start`}>Continue with Google</a>
         <a href={`${ACCOUNTS_URL}/oauth/github/start`}>Continue with GitHub</a>
+        <a href={`${ACCOUNTS_URL}/oauth/discord/start`}>Continue with Discord</a>
       </div>
     </div>
   );
