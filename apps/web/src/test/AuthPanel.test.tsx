@@ -48,6 +48,7 @@ describe("AuthPanel", () => {
           email: "ada@example.com",
           planTier: "free",
           hasPassword: true,
+          emailVerified: true,
           createdAt: "2026-01-01T00:00:00Z",
         },
         token: "test-token",
@@ -107,6 +108,7 @@ describe("AuthPanel", () => {
           email: "grace@example.com",
           planTier: "free",
           hasPassword: true,
+          emailVerified: true,
           createdAt: "2026-01-01T00:00:00Z",
         },
         token: "signup-token",
@@ -143,6 +145,7 @@ describe("AuthPanel", () => {
           email: "ada@example.com",
           planTier: "free",
           hasPassword: true,
+          emailVerified: true,
           createdAt: "2026-01-01T00:00:00Z",
         },
       }),
@@ -187,6 +190,7 @@ describe("AuthPanel", () => {
       email: "oauth-only@example.com",
       planTier: "free",
       hasPassword: false,
+      emailVerified: true,
       createdAt: "2026-01-01T00:00:00Z",
     };
 
@@ -363,6 +367,7 @@ describe("AuthPanel", () => {
             email: "reset-user@example.com",
             planTier: "free",
             hasPassword: true,
+            emailVerified: true,
             createdAt: "2026-01-01T00:00:00Z",
           },
         }),
@@ -384,6 +389,95 @@ describe("AuthPanel", () => {
     });
   });
 
+  describe("Verify email (unverified accounts)", () => {
+    const UNVERIFIED_USER = {
+      id: "u5",
+      email: "unverified@example.com",
+      planTier: "free",
+      hasPassword: true,
+      emailVerified: false,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+
+    it("shows the resend-verification hint for a signed-in unverified user", async () => {
+      window.localStorage.setItem("maker.accounts.token", "unverified-token");
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: UNVERIFIED_USER }));
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      expect(await screen.findByText(/Please verify your email address/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Resend verification email" })).toBeInTheDocument();
+    });
+
+    it("does not show the hint for a verified user", async () => {
+      window.localStorage.setItem("maker.accounts.token", "verified-token");
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, { user: { ...UNVERIFIED_USER, emailVerified: true } }),
+      );
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      expect(await screen.findByText("unverified@example.com")).toBeInTheDocument();
+      expect(screen.queryByText(/Please verify your email address/)).not.toBeInTheDocument();
+    });
+
+    it("resends the verification email", async () => {
+      window.localStorage.setItem("maker.accounts.token", "unverified-token");
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: UNVERIFIED_USER }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(202, { message: "sent" }));
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Resend verification email" }));
+
+      expect(await screen.findByText(/Verification email sent/)).toBeInTheDocument();
+
+      const resendCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).includes("/me/resend-verification"),
+      );
+      expect(resendCall).toBeDefined();
+      const [, init] = resendCall!;
+      expect(init?.method).toBe("POST");
+      expect((init?.headers as Record<string, string>).Authorization).toBe(
+        "Bearer unverified-token",
+      );
+    });
+
+    it("shows an error when resending fails", async () => {
+      window.localStorage.setItem("maker.accounts.token", "unverified-token");
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: UNVERIFIED_USER }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Resend verification email" }));
+
+      expect(
+        await screen.findByText(/Resending the verification email failed with 500/),
+      ).toBeInTheDocument();
+    });
+  });
+
   describe("Connect another provider (signed-in session)", () => {
     it("shows connect links carrying the current session as a linkToken", async () => {
       window.localStorage.setItem("maker.accounts.token", "session-token");
@@ -395,6 +489,7 @@ describe("AuthPanel", () => {
             email: "ada@example.com",
             planTier: "free",
             hasPassword: true,
+            emailVerified: true,
             createdAt: "2026-01-01T00:00:00Z",
           },
         }),

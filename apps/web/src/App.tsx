@@ -42,6 +42,7 @@ import { CloudProjectsPanel } from "./components/CloudProjectsPanel";
 import { MaterialDbPanel } from "./components/MaterialDbPanel";
 import { CommunityLibraryPanel } from "./components/CommunityLibraryPanel";
 import { ModerationPanel } from "./components/ModerationPanel";
+import { EmailVerificationPanel } from "./components/EmailVerificationPanel";
 import { OAuthCallbackPanel } from "./components/OAuthCallbackPanel";
 import { ResetPasswordPanel } from "./components/ResetPasswordPanel";
 import { SharedProjectPanel } from "./components/SharedProjectPanel";
@@ -240,6 +241,8 @@ export function App() {
             <OAuthCallbackPanel route={route} />
           ) : route.startsWith("/reset-password") ? (
             <ResetPasswordPanel route={route} />
+          ) : route.startsWith("/verify-email") ? (
+            <EmailVerificationPanel route={route} />
           ) : route.startsWith("/shared/") ? (
             <SharedProjectPanel route={route} onLoadDocument={handleLoadDocument} />
           ) : route === "/editor" ? (

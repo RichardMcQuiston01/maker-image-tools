@@ -7,6 +7,7 @@ export interface AuthUser {
   planTier: string;
   role: string;
   hasPassword: boolean;
+  emailVerified: boolean;
   createdAt: string;
 }
 

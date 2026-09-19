@@ -8,6 +8,9 @@ export interface User {
   role: string;
   /** Whether this account has a password set - false for an OAuth-only account that hasn't set one yet. */
   hasPassword: boolean;
+  /** Whether this account's email is verified - true immediately for an OAuth account (the provider
+   * already verified it), only once the emailed link is confirmed for a password account. */
+  emailVerified: boolean;
   createdAt: Date;
 }
 
@@ -17,6 +20,7 @@ interface UserRow {
   password_hash: string | null;
   plan_tier: string;
   role: string;
+  email_verified_at: Date | null;
   created_at: Date;
 }
 
@@ -27,6 +31,7 @@ function toUser(row: UserRow): User {
     planTier: row.plan_tier,
     role: row.role,
     hasPassword: row.password_hash !== null,
+    emailVerified: row.email_verified_at !== null,
     createdAt: row.created_at,
   };
 }
@@ -99,7 +104,7 @@ export async function createOAuthOnlyUser(pool: Pool, email: string): Promise<Us
 
   try {
     const { rows } = await pool.query<UserRow>(
-      "INSERT INTO users (email, password_hash) VALUES ($1, NULL) RETURNING *",
+      "INSERT INTO users (email, password_hash, email_verified_at) VALUES ($1, NULL, now()) RETURNING *",
       [normalizedEmail],
     );
     return toUser(rows[0] as UserRow);
@@ -186,6 +191,23 @@ export async function setPasswordForUser(
   const { rows } = await pool.query<UserRow>(
     "UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING *",
     [passwordHash, id],
+  );
+  return rows[0] ? toUser(rows[0]) : undefined;
+}
+
+/**
+ * Marks `id`'s email as verified, returning the updated user, or `undefined`
+ * if no user has that id. Idempotent (`COALESCE`) - confirming an
+ * already-verified email again just keeps the original verification time
+ * rather than erroring, since there's nothing unsafe about it. Callers are
+ * expected to have already proven ownership of the email (see
+ * `emailVerification.ts`'s `confirmEmailVerification`, which only calls this
+ * after consuming a valid verification token).
+ */
+export async function markEmailVerified(pool: Pool, id: string): Promise<User | undefined> {
+  const { rows } = await pool.query<UserRow>(
+    "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1 RETURNING *",
+    [id],
   );
   return rows[0] ? toUser(rows[0]) : undefined;
 }
