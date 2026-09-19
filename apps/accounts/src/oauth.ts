@@ -138,9 +138,47 @@ function githubProvider(): OAuthProvider {
   };
 }
 
+/**
+ * Discord's OAuth endpoints. `GET /users/@me` (with the `email` scope
+ * granted) returns `email`/`verified` directly - no separate emails
+ * endpoint to fall back to like GitHub's, but `verified` still needs
+ * checking: Discord lets a user grant the `email` scope with an
+ * unverified address attached to their account.
+ * `DISCORD_AUTHORIZE_URL`/`DISCORD_TOKEN_URL`/`DISCORD_API_BASE_URL`
+ * override the defaults for the same reason as Google's/GitHub's above.
+ */
+function discordProvider(): OAuthProvider {
+  const apiBaseUrl = envOrDefault("DISCORD_API_BASE_URL", "https://discord.com/api");
+  return {
+    name: "discord",
+    authorizeUrl: envOrDefault("DISCORD_AUTHORIZE_URL", "https://discord.com/oauth2/authorize"),
+    tokenUrl: envOrDefault("DISCORD_TOKEN_URL", "https://discord.com/api/oauth2/token"),
+    clientId: requireEnv("DISCORD_CLIENT_ID"),
+    clientSecret: requireEnv("DISCORD_CLIENT_SECRET"),
+    scope: "identify email",
+    async fetchUserInfo(accessToken) {
+      const body = await fetchJson(
+        `${apiBaseUrl}/users/@me`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+        "Discord user request",
+      );
+      const providerUserId = body.id;
+      const email = body.email;
+      if (typeof providerUserId !== "string" || typeof email !== "string") {
+        throw new Error("Discord user response is missing id/email");
+      }
+      if (body.verified !== true) {
+        throw new Error("Discord account has no verified email address");
+      }
+      return { providerUserId, email };
+    },
+  };
+}
+
 const PROVIDER_FACTORIES: Record<string, () => OAuthProvider> = {
   google: googleProvider,
   github: githubProvider,
+  discord: discordProvider,
 };
 
 export function getOAuthProvider(name: string): OAuthProvider | undefined {

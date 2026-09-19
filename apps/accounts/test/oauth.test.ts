@@ -18,6 +18,11 @@ const ENV_KEYS = [
   "GITHUB_AUTHORIZE_URL",
   "GITHUB_TOKEN_URL",
   "GITHUB_API_BASE_URL",
+  "DISCORD_CLIENT_ID",
+  "DISCORD_CLIENT_SECRET",
+  "DISCORD_AUTHORIZE_URL",
+  "DISCORD_TOKEN_URL",
+  "DISCORD_API_BASE_URL",
 ] as const;
 
 describe("OAuth login", () => {
@@ -60,6 +65,11 @@ describe("OAuth login", () => {
     process.env.GITHUB_AUTHORIZE_URL = `${fakeProvider.baseUrl}/authorize`;
     process.env.GITHUB_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
     process.env.GITHUB_API_BASE_URL = fakeProvider.baseUrl;
+    process.env.DISCORD_CLIENT_ID = "discord-client-id";
+    process.env.DISCORD_CLIENT_SECRET = "discord-client-secret";
+    process.env.DISCORD_AUTHORIZE_URL = `${fakeProvider.baseUrl}/authorize`;
+    process.env.DISCORD_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+    process.env.DISCORD_API_BASE_URL = fakeProvider.baseUrl;
   });
 
   afterEach(async () => {
@@ -205,6 +215,43 @@ describe("OAuth login", () => {
     ).json();
 
     expect(me.user.email).toBe("primary@example.com");
+  });
+
+  it("completes a full Discord login for a brand-new user", async () => {
+    await fakeProvider.close();
+    fakeProvider = await startFakeOAuthProvider({
+      discordUser: { id: "discord-id-1", email: "ada@example.com", verified: true },
+    });
+    process.env.DISCORD_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+    process.env.DISCORD_API_BASE_URL = fakeProvider.baseUrl;
+
+    const { state } = await startFlow("discord");
+    const { status, location } = await runCallback("discord", { code: "fake-code", state });
+
+    expect(status).toBe(302);
+    const callbackUrl = new URL(location!.replace("#/", ""));
+    const token = callbackUrl.searchParams.get("token");
+    expect(token).toBeTruthy();
+
+    const me = await (
+      await fetch(`${baseUrl}/me`, { headers: { Authorization: `Bearer ${token}` } })
+    ).json();
+    expect(me.user.email).toBe("ada@example.com");
+  });
+
+  it("rejects a Discord login with an unverified email", async () => {
+    await fakeProvider.close();
+    fakeProvider = await startFakeOAuthProvider({
+      discordUser: { id: "discord-id-2", email: "unverified@example.com", verified: false },
+    });
+    process.env.DISCORD_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+    process.env.DISCORD_API_BASE_URL = fakeProvider.baseUrl;
+
+    const { state } = await startFlow("discord");
+    const { status, location } = await runCallback("discord", { code: "fake-code", state });
+
+    expect(status).toBe(302);
+    expect(location).toContain("/#/oauth-callback?error=");
   });
 
   it("redirects to the web app with an error when the provider reports one (user declined consent)", async () => {
