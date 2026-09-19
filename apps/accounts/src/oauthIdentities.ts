@@ -46,3 +46,46 @@ export async function findOrCreateUserForOAuthIdentity(
 
   return user;
 }
+
+/** Thrown when the (provider, providerUserId) pair is already linked to some account. */
+export class OAuthIdentityAlreadyLinkedError extends Error {}
+
+/**
+ * Links an OAuth identity to an already-signed-in user's account, for
+ * "connect another provider" from within a session - as opposed to
+ * `findOrCreateUserForOAuthIdentity` above, this never creates a new user or
+ * matches by email; it only ever attaches to the specific `userId` the
+ * caller already authenticated as. `oauth_identities`'s own
+ * `PRIMARY KEY (provider, provider_user_id)` is what actually enforces "an
+ * identity can only ever be linked to one account" - a duplicate insert
+ * (whether to this user or a different one) surfaces as
+ * `OAuthIdentityAlreadyLinkedError`.
+ */
+export async function linkOAuthIdentityToUser(
+  pool: Pool,
+  userId: string,
+  { provider, providerUserId }: Pick<OAuthIdentityLookup, "provider" | "providerUserId">,
+): Promise<User> {
+  const user = await findUserById(pool, userId);
+  if (!user) {
+    throw new Error(`Cannot link OAuth identity: no user with id ${userId}`);
+  }
+  try {
+    await pool.query(
+      "INSERT INTO oauth_identities (provider, provider_user_id, user_id) VALUES ($1, $2, $3)",
+      [provider, providerUserId, userId],
+    );
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw new OAuthIdentityAlreadyLinkedError(
+        `This ${provider} account is already linked to a user`,
+      );
+    }
+    throw err;
+  }
+  return user;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
+}

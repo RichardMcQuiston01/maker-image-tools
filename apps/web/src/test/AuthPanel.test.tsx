@@ -276,4 +276,44 @@ describe("AuthPanel", () => {
       expect(await screen.findByText(/Setting a password failed with 409/)).toBeInTheDocument();
     });
   });
+
+  describe("Connect another provider (signed-in session)", () => {
+    it("shows connect links carrying the current session as a linkToken", async () => {
+      window.localStorage.setItem("maker.accounts.token", "session-token");
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          user: {
+            id: "u1",
+            email: "ada@example.com",
+            planTier: "free",
+            hasPassword: true,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        }),
+      );
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      const googleLink = await screen.findByRole("link", { name: "Connect Google" });
+      expect(googleLink).toHaveAttribute(
+        "href",
+        expect.stringContaining("/oauth/google/start?linkToken=session-token"),
+      );
+      const githubLink = screen.getByRole("link", { name: "Connect GitHub" });
+      expect(githubLink).toHaveAttribute(
+        "href",
+        expect.stringContaining("/oauth/github/start?linkToken=session-token"),
+      );
+      const discordLink = screen.getByRole("link", { name: "Connect Discord" });
+      expect(discordLink).toHaveAttribute(
+        "href",
+        expect.stringContaining("/oauth/discord/start?linkToken=session-token"),
+      );
+    });
+  });
 });

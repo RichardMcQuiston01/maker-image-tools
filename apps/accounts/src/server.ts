@@ -12,7 +12,11 @@ import {
   InvalidOAuthStateError,
   OAuthConfigError,
 } from "./oauth.js";
-import { findOrCreateUserForOAuthIdentity } from "./oauthIdentities.js";
+import {
+  findOrCreateUserForOAuthIdentity,
+  linkOAuthIdentityToUser,
+  OAuthIdentityAlreadyLinkedError,
+} from "./oauthIdentities.js";
 import {
   createSession,
   deleteExpiredSessions,
@@ -135,7 +139,11 @@ function errorStatus(err: unknown): number {
   )
     return 400;
   if (err instanceof NotAModeratorError) return 403;
-  if (err instanceof EmailAlreadyRegisteredError || err instanceof PasswordAlreadySetError)
+  if (
+    err instanceof EmailAlreadyRegisteredError ||
+    err instanceof PasswordAlreadySetError ||
+    err instanceof OAuthIdentityAlreadyLinkedError
+  )
     return 409;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
@@ -297,8 +305,18 @@ export function createServer(pool: Pool = createPool()) {
               sendJson(res, 404, { error: `Unknown OAuth provider "${providerName}"` });
               return;
             }
+            let linkUserId: string | undefined;
+            const linkToken = url.searchParams.get("linkToken");
+            if (linkToken) {
+              const validated = await validateSession(pool, linkToken);
+              if (!validated) {
+                sendJson(res, 401, { error: "Invalid or expired session" });
+                return;
+              }
+              linkUserId = validated.id;
+            }
             const redirectUri = `${requireOAuthEnv("ACCOUNTS_BASE_URL").replace(/\/$/, "")}/oauth/${providerName}/callback`;
-            const { redirectTo } = buildAuthorizationRequest(provider, redirectUri);
+            const { redirectTo } = buildAuthorizationRequest(provider, redirectUri, linkUserId);
             redirect(res, redirectTo);
             return;
           }
@@ -331,13 +349,23 @@ export function createServer(pool: Pool = createPool()) {
 
             const redirectUri = `${requireOAuthEnv("ACCOUNTS_BASE_URL").replace(/\/$/, "")}/oauth/${providerName}/callback`;
             try {
-              const userInfo = await exchangeCodeForUserInfo(provider, code, state, redirectUri);
+              const { userInfo, linkUserId } = await exchangeCodeForUserInfo(
+                provider,
+                code,
+                state,
+                redirectUri,
+              );
               const user = await syncModeratorRole(
                 pool,
-                await findOrCreateUserForOAuthIdentity(pool, {
-                  provider: providerName,
-                  ...userInfo,
-                }),
+                linkUserId
+                  ? await linkOAuthIdentityToUser(pool, linkUserId, {
+                      provider: providerName,
+                      providerUserId: userInfo.providerUserId,
+                    })
+                  : await findOrCreateUserForOAuthIdentity(pool, {
+                      provider: providerName,
+                      ...userInfo,
+                    }),
               );
               const session = await createSession(pool, user.id);
               redirect(

@@ -200,6 +200,8 @@ interface OAuthStatePayload {
   provider: string;
   codeVerifier: string;
   issuedAt: number;
+  /** Set when this flow started as "connect another provider" from a signed-in session, rather than a login. */
+  linkUserId?: string;
 }
 
 function signState(payload: OAuthStatePayload): string {
@@ -250,13 +252,25 @@ export interface OAuthAuthorizationRequest {
   redirectTo: string;
 }
 
-/** Builds the provider consent-page URL a caller should redirect the browser to. */
+/**
+ * Builds the provider consent-page URL a caller should redirect the browser
+ * to. Pass `linkUserId` when this flow is "connect another provider" from an
+ * already-signed-in session - `exchangeCodeForUserInfo` hands it back after
+ * the round trip so the callback can link to that account instead of
+ * running the ordinary find-or-create-by-email login flow.
+ */
 export function buildAuthorizationRequest(
   provider: OAuthProvider,
   redirectUri: string,
+  linkUserId?: string,
 ): OAuthAuthorizationRequest {
   const codeVerifier = generateCodeVerifier();
-  const state = signState({ provider: provider.name, codeVerifier, issuedAt: Date.now() });
+  const state = signState({
+    provider: provider.name,
+    codeVerifier,
+    issuedAt: Date.now(),
+    ...(linkUserId ? { linkUserId } : {}),
+  });
 
   const url = new URL(provider.authorizeUrl);
   url.searchParams.set("client_id", provider.clientId);
@@ -269,14 +283,20 @@ export function buildAuthorizationRequest(
   return { redirectTo: url.toString() };
 }
 
+export interface OAuthExchangeResult {
+  userInfo: OAuthUserInfo;
+  /** Present when the original `/start` request carried a `linkUserId` (see `buildAuthorizationRequest`). */
+  linkUserId?: string;
+}
+
 /** Exchanges an authorization `code` for the provider's user info, validating `state`/PKCE along the way. */
 export async function exchangeCodeForUserInfo(
   provider: OAuthProvider,
   code: string,
   state: string,
   redirectUri: string,
-): Promise<OAuthUserInfo> {
-  const { codeVerifier } = verifyState(state, provider.name);
+): Promise<OAuthExchangeResult> {
+  const { codeVerifier, linkUserId } = verifyState(state, provider.name);
 
   const tokenBody = await fetchJson(
     provider.tokenUrl,
@@ -298,5 +318,6 @@ export async function exchangeCodeForUserInfo(
   if (typeof accessToken !== "string") {
     throw new Error(`${provider.name} token response did not include an access_token`);
   }
-  return provider.fetchUserInfo(accessToken);
+  const userInfo = await provider.fetchUserInfo(accessToken);
+  return { userInfo, ...(linkUserId ? { linkUserId } : {}) };
 }

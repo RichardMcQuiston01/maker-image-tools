@@ -91,6 +91,13 @@ body {
   flex-basis: 100%;
 }
 
+.auth-panel__oauth--connect {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  flex-basis: 100%;
+}
+
 .auth-panel__hint {
   font-size: 0.8rem;
   color: light-dark(#666, #aaa);

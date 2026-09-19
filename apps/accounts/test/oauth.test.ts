@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
+import { createSession } from "../src/sessions.js";
+import { createOAuthOnlyUser } from "../src/users.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 import { startFakeOAuthProvider, type FakeOAuthProvider } from "./fakeOAuthProvider.js";
 
@@ -84,8 +86,14 @@ describe("OAuth login", () => {
     return new URL(location).searchParams.get(param);
   }
 
-  async function startFlow(provider: string): Promise<{ location: string; state: string }> {
-    const response = await fetch(`${baseUrl}/oauth/${provider}/start`, { redirect: "manual" });
+  async function startFlow(
+    provider: string,
+    linkToken?: string,
+  ): Promise<{ location: string; state: string }> {
+    const query = linkToken ? `?linkToken=${encodeURIComponent(linkToken)}` : "";
+    const response = await fetch(`${baseUrl}/oauth/${provider}/start${query}`, {
+      redirect: "manual",
+    });
     expect(response.status).toBe(302);
     const location = response.headers.get("location")!;
     const state = extractQueryParam(location, "state")!;
@@ -302,5 +310,76 @@ describe("OAuth login", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.error).toContain("ACCOUNTS_BASE_URL");
+  });
+
+  describe("connecting another provider from a signed-in session", () => {
+    it("links a second provider to the signed-in caller's account, not a new or email-matched one", async () => {
+      const signup = await fetch(`${baseUrl}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com", password: "hunter22222" }),
+      });
+      const { user: passwordUser, token } = await signup.json();
+
+      await fakeProvider.close();
+      fakeProvider = await startFakeOAuthProvider({
+        githubUser: { id: "github-sub-1", email: "ada+github@example.com" },
+      });
+      process.env.GITHUB_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+      process.env.GITHUB_API_BASE_URL = fakeProvider.baseUrl;
+
+      const { state } = await startFlow("github", token);
+      const { status, location } = await runCallback("github", { code: "fake-code", state });
+      expect(status).toBe(302);
+      const linkToken = new URL(location!.replace("#/", "")).searchParams.get("token");
+      const linkedMe = await (
+        await fetch(`${baseUrl}/me`, { headers: { Authorization: `Bearer ${linkToken}` } })
+      ).json();
+
+      // Linked to the already-signed-in account, not a new user or one matched by the GitHub email.
+      expect(linkedMe.user.id).toBe(passwordUser.id);
+      expect(linkedMe.user.email).toBe("ada@example.com");
+    });
+
+    it("rejects linking an identity already linked to a different account with a redirect error", async () => {
+      await fakeProvider.close();
+      fakeProvider = await startFakeOAuthProvider({
+        userInfo: { sub: "google-sub-shared", email: "first@example.com" },
+      });
+      process.env.GOOGLE_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+      process.env.GOOGLE_USERINFO_URL = `${fakeProvider.baseUrl}/userinfo`;
+
+      const { state: firstState } = await startFlow("google");
+      const { location: firstLocation } = await runCallback("google", {
+        code: "code-1",
+        state: firstState,
+      });
+      const firstOwner = new URL(firstLocation!.replace("#/", "")).searchParams.get("token")!;
+      const firstOwnerMe = await (
+        await fetch(`${baseUrl}/me`, { headers: { Authorization: `Bearer ${firstOwner}` } })
+      ).json();
+
+      const secondOwner = await createOAuthOnlyUser(pool, "second@example.com");
+      const secondOwnerSession = await createSession(pool, secondOwner.id);
+
+      const { state } = await startFlow("google", secondOwnerSession.token);
+      const { status, location } = await runCallback("google", { code: "code-2", state });
+      expect(status).toBe(302);
+      expect(location).toContain("/#/oauth-callback?error=");
+      expect(location).toContain("already");
+
+      // The identity is still linked to whoever had it first, unaffected by the failed attempt.
+      const stillFirst = await (
+        await fetch(`${baseUrl}/me`, { headers: { Authorization: `Bearer ${firstOwner}` } })
+      ).json();
+      expect(stillFirst.user.id).toBe(firstOwnerMe.user.id);
+    });
+
+    it("rejects a start request with an invalid linkToken with 401", async () => {
+      const response = await fetch(`${baseUrl}/oauth/github/start?linkToken=not-a-real-token`, {
+        redirect: "manual",
+      });
+      expect(response.status).toBe(401);
+    });
   });
 });
