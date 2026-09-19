@@ -26,6 +26,8 @@ import {
   findUserById,
   InvalidCredentialsFormatError,
   InvalidRoleError,
+  PasswordAlreadySetError,
+  setPasswordForOAuthOnlyUser,
   setUserRole,
   type User,
 } from "./users.js";
@@ -77,6 +79,7 @@ function userJson(user: User) {
     email: user.email,
     planTier: user.planTier,
     role: user.role,
+    hasPassword: user.hasPassword,
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -132,7 +135,8 @@ function errorStatus(err: unknown): number {
   )
     return 400;
   if (err instanceof NotAModeratorError) return 403;
-  if (err instanceof EmailAlreadyRegisteredError) return 409;
+  if (err instanceof EmailAlreadyRegisteredError || err instanceof PasswordAlreadySetError)
+    return 409;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
   if (
@@ -222,6 +226,28 @@ export function createServer(pool: Pool = createPool()) {
           }
           const user = await syncModeratorRole(pool, validated);
           sendJson(res, 200, { user: userJson(user) });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/me/password") {
+          const token = bearerToken(req);
+          if (!token) {
+            sendJson(res, 401, { error: "Missing bearer token" });
+            return;
+          }
+          const validated = await validateSession(pool, token);
+          if (!validated) {
+            sendJson(res, 401, { error: "Invalid or expired session" });
+            return;
+          }
+          const body = await parseJsonBody(req);
+          const password = requireString(body, "password");
+          const updated = await setPasswordForOAuthOnlyUser(pool, validated.id, password);
+          if (!updated) {
+            sendJson(res, 404, { error: "Not found" });
+            return;
+          }
+          sendJson(res, 200, { user: userJson(updated) });
           return;
         }
 

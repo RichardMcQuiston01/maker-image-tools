@@ -62,6 +62,7 @@ export DATABASE_URL=postgres://maker:maker@localhost:5432/maker_accounts
 | `GET /oauth/:provider/callback` | —                     | —                               | `302` back to `WEB_APP_URL` with `?token=` or `?error=` / `404` unknown provider                                             |
 | `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                                                                       |
 | `POST /users/:id/role`          | `{ role }`            | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid role / `401` invalid/expired token / `403` caller isn't a moderator / `404` unknown target id |
+| `POST /me/password`             | `{ password }`        | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid password / `401` invalid/expired token / `409` account already has a password                 |
 
 `GET /users/:id/role` is server-to-server: `apps/community-library` and `apps/material-db` call it
 to verify a caller-supplied `reviewerId` actually belongs to a `moderator` before honoring an
@@ -73,7 +74,13 @@ trust each other's plain ids everywhere else.
 user's `role` to `user` or `moderator` (promote or demote). See "Roles" below for how this fits
 alongside `MODERATOR_EMAILS`.
 
-`user` is `{ id, email, planTier, role, createdAt }`. Sessions are bearer tokens (not cookies): the
+`POST /me/password` lets a signed-in user set a password for their own account - the one way an
+OAuth-only account (`password_hash IS NULL`, see "OAuth login" below) gains the ability to also log
+in with `POST /login`. It only ever sets a password where none exists yet (a `409` otherwise);
+changing an existing password would need the current one verified first, which is a different,
+larger feature (see "Password reset" in "What's not here yet").
+
+`user` is `{ id, email, planTier, role, hasPassword, createdAt }`. Sessions are bearer tokens (not cookies): the
 client is expected to hold the token (e.g. in memory or `localStorage`) and send it as
 `Authorization: Bearer <token>`. Only a SHA-256 hash of each token is stored, so a database leak
 alone can't be replayed as a valid session. A production deployment fronting real end users would
@@ -123,7 +130,8 @@ in order: an existing `oauth_identities` row for this exact `(provider, provider
 ordinary repeat-login case); otherwise a user with a matching email however they originally signed
 up, which links this identity to that account (the provider is trusted to have verified the email
 itself); otherwise a brand-new OAuth-only user (`password_hash` is nullable - such a user can only
-ever sign in via the provider that created them, there's no "add a password later" flow yet).
+ever sign in via the provider that created them, until they set a password via `POST /me/password`
+above).
 
 The `state` parameter carries its own PKCE `code_verifier` and an issue timestamp, HMAC-signed with
 a secret generated once per server process - enough to detect tampering and expiry (10 minutes)
@@ -143,9 +151,9 @@ at least once.
 ## What's not here yet
 
 - **Password reset / email verification** — not yet implemented.
-- **Adding a password to an OAuth-only account, or linking a second OAuth provider from a signed-in
-  session** — both are only possible today by signing in with an email that matches an existing
-  account, which links automatically; there's no explicit "connect another provider" action.
+- **Linking a second OAuth provider from a signed-in session** — the only way to attach another
+  provider to an existing account today is signing in with an email that matches it, which links
+  automatically; there's no explicit "connect another provider" action while already signed in.
 - **Providers beyond Google/GitHub/Discord** — `oauth.ts`'s `OAuthProvider` shape is
   provider-agnostic (any provider is just a new factory function keyed by name), but only these
   three are wired up.

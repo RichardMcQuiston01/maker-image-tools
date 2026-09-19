@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
+import { createSession } from "../src/sessions.js";
+import { createOAuthOnlyUser } from "../src/users.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 describe("accounts server", () => {
@@ -256,6 +258,67 @@ describe("accounts server", () => {
         body: JSON.stringify({ role: "moderator" }),
       });
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe("POST /me/password", () => {
+    it("sets a password for an OAuth-only account and lets it log in afterward", async () => {
+      const oauthUser = await createOAuthOnlyUser(pool, "oauth-only@example.com");
+      const session = await createSession(pool, oauthUser.id);
+
+      const response = await fetch(`${baseUrl}/me/password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({ password: "hunter22222" }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).user.hasPassword).toBe(true);
+
+      const login = await fetch(`${baseUrl}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "oauth-only@example.com", password: "hunter22222" }),
+      });
+      expect(login.status).toBe(200);
+    });
+
+    it("rejects setting a password on an account that already has one with 409", async () => {
+      const signupResponse = await signup("ada@example.com", "hunter22222");
+      const { token } = await signupResponse.json();
+
+      const response = await fetch(`${baseUrl}/me/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: "different99" }),
+      });
+      expect(response.status).toBe(409);
+    });
+
+    it("rejects a request with no bearer token with 401", async () => {
+      const response = await fetch(`${baseUrl}/me/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "hunter22222" }),
+      });
+      expect(response.status).toBe(401);
+    });
+
+    it("rejects a too-short password with 400", async () => {
+      const oauthUser = await createOAuthOnlyUser(pool, "oauth-only@example.com");
+      const session = await createSession(pool, oauthUser.id);
+
+      const response = await fetch(`${baseUrl}/me/password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({ password: "short" }),
+      });
+      expect(response.status).toBe(400);
     });
   });
 

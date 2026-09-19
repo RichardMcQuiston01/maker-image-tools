@@ -35,6 +35,7 @@ body {
 .auth-panel {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-left: auto;
 }
@@ -79,6 +80,21 @@ body {
 
 .auth-panel__oauth a {
   color: light-dark(#666, #aaa);
+}
+
+.auth-panel__set-password {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  flex-basis: 100%;
+}
+
+.auth-panel__hint {
+  font-size: 0.8rem;
+  color: light-dark(#666, #aaa);
+  margin: 0;
 }
 
 .oauth-callback {

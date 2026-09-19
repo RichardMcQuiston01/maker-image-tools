@@ -2,12 +2,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import {
   authenticate,
+  createOAuthOnlyUser,
   createUser,
   EmailAlreadyRegisteredError,
   findUserByEmail,
   findUserById,
   InvalidCredentialsFormatError,
   InvalidRoleError,
+  PasswordAlreadySetError,
+  setPasswordForOAuthOnlyUser,
   setUserRole,
 } from "../src/users.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
@@ -33,6 +36,7 @@ describe("users", () => {
     expect(user.email).toBe("ada@example.com"); // normalized to lowercase
     expect(user.planTier).toBe("free");
     expect(user.role).toBe("user");
+    expect(user.hasPassword).toBe(true);
     expect(user.id).toBeTruthy();
   });
 
@@ -83,6 +87,42 @@ describe("users", () => {
     it("rejects a role that isn't 'user' or 'moderator'", async () => {
       const created = await createUser(pool, "ada@example.com", "hunter22222");
       await expect(setUserRole(pool, created.id, "admin")).rejects.toThrow(InvalidRoleError);
+    });
+  });
+
+  describe("setPasswordForOAuthOnlyUser", () => {
+    it("sets a password for an OAuth-only account and lets it authenticate afterward", async () => {
+      const created = await createOAuthOnlyUser(pool, "ada@example.com");
+      expect(created.hasPassword).toBe(false);
+      expect(await authenticate(pool, "ada@example.com", "hunter22222")).toBeUndefined();
+
+      const updated = await setPasswordForOAuthOnlyUser(pool, created.id, "hunter22222");
+      expect(updated?.hasPassword).toBe(true);
+      expect((await authenticate(pool, "ada@example.com", "hunter22222"))?.id).toBe(created.id);
+    });
+
+    it("rejects setting a password on an account that already has one", async () => {
+      const created = await createUser(pool, "ada@example.com", "hunter22222");
+      await expect(setPasswordForOAuthOnlyUser(pool, created.id, "different99")).rejects.toThrow(
+        PasswordAlreadySetError,
+      );
+    });
+
+    it("rejects a too-short password", async () => {
+      const created = await createOAuthOnlyUser(pool, "ada@example.com");
+      await expect(setPasswordForOAuthOnlyUser(pool, created.id, "short")).rejects.toThrow(
+        InvalidCredentialsFormatError,
+      );
+    });
+
+    it("returns undefined for an unknown user id", async () => {
+      expect(
+        await setPasswordForOAuthOnlyUser(
+          pool,
+          "00000000-0000-0000-0000-000000000000",
+          "hunter22222",
+        ),
+      ).toBeUndefined();
     });
   });
 
