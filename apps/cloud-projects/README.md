@@ -22,21 +22,24 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 
 ## Environment variables
 
-| Variable               | Required | Default | Used by                                                                                         |
-| ---------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `PORT`                 | no       | `8790`  | server listen port                                                                              |
-| `DATABASE_URL`         | yes      | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_cloud_projects` |
-| `S3_ENDPOINT`          | yes      | —       | S3-compatible endpoint URL (AWS S3, Cloudflare R2, a local MinIO)                               |
-| `S3_BUCKET`            | yes      | —       | bucket name project data is stored under                                                        |
-| `S3_ACCESS_KEY_ID`     | yes      | —       | object storage credentials                                                                      |
-| `S3_SECRET_ACCESS_KEY` | yes      | —       | object storage credentials                                                                      |
-| `S3_REGION`            | no       | `auto`  | most S3-compatible providers other than AWS itself ignore this                                  |
-| `ACCOUNTS_URL`         | yes      | —       | `@maker/accounts`'s base URL, used to verify a caller's bearer token via `GET /me`              |
+| Variable               | Required | Default | Used by                                                                                                                  |
+| ---------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                 | no       | `8790`  | server listen port                                                                                                       |
+| `DATABASE_URL`         | yes      | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_cloud_projects`                          |
+| `S3_ENDPOINT`          | yes      | —       | S3-compatible endpoint URL (AWS S3, Cloudflare R2, a local MinIO)                                                        |
+| `S3_BUCKET`            | yes      | —       | bucket name project data is stored under                                                                                 |
+| `S3_ACCESS_KEY_ID`     | yes      | —       | object storage credentials                                                                                               |
+| `S3_SECRET_ACCESS_KEY` | yes      | —       | object storage credentials                                                                                               |
+| `S3_REGION`            | no       | `auto`  | most S3-compatible providers other than AWS itself ignore this                                                           |
+| `ACCOUNTS_URL`         | yes      | —       | `@maker/accounts`'s base URL, used to verify a caller's bearer token via `GET /me`                                       |
+| `BILLING_URL`          | yes      | —       | `@maker/billing`'s base URL, e.g. `http://localhost:8789` — used to look up a caller's plan tier via `GET /subscription` |
 
 Without `DATABASE_URL` (or without all four `S3_*` variables) set, every request responds `500`
 with a message explaining what's missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY`
 handling: no silent fallback that could be mistaken for a working configuration. Every
 project-scoped route fails the same way without `ACCOUNTS_URL` set - see "Access control" below.
+`POST /projects` and `PUT /projects/:id` additionally fail without `BILLING_URL` set - see "Storage
+quotas" below.
 
 ## Local Postgres + object storage
 
@@ -62,16 +65,16 @@ export S3_SECRET_ACCESS_KEY=makermaker
 
 ## API
 
-| Route                        | Body / Query       | Auth                            | Response                                                                                        |
-| ---------------------------- | ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `POST /projects`             | `{ name, data }`   | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token    |
-| `GET /projects`              | —                  | `Authorization: Bearer <token>` | `200 { projects }` — summaries only (no `data`), newest-updated first / `401`                   |
-| `GET /projects/:id`          | —                  | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or not owned by the caller / `401`       |
-| `PUT /projects/:id`          | `{ name?, data? }` | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401`               |
-| `DELETE /projects/:id`       | —                  | `Authorization: Bearer <token>` | `204` / `404` / `401`                                                                           |
-| `POST /projects/:id/share`   | —                  | `Authorization: Bearer <token>` | `200 { token }` — creates a share token if the project doesn't already have one / `404` / `401` |
-| `DELETE /projects/:id/share` | —                  | `Authorization: Bearer <token>` | `204` — revokes the project's share token / `404` / `401`                                       |
-| `GET /shared/:token`         | —                  | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked            |
+| Route                        | Body / Query       | Auth                            | Response                                                                                                                                               |
+| ---------------------------- | ------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /projects`             | `{ name, data }`   | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                      |
+| `GET /projects`              | —                  | `Authorization: Bearer <token>` | `200 { projects }` — summaries only (no `data`), newest-updated first / `401`                                                                          |
+| `GET /projects/:id`          | —                  | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or not owned by the caller / `401`                                                              |
+| `PUT /projects/:id`          | `{ name?, data? }` | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the caller over their plan quota |
+| `DELETE /projects/:id`       | —                  | `Authorization: Bearer <token>` | `204` / `404` / `401`                                                                                                                                  |
+| `POST /projects/:id/share`   | —                  | `Authorization: Bearer <token>` | `200 { token }` — creates a share token if the project doesn't already have one / `404` / `401`                                                        |
+| `DELETE /projects/:id/share` | —                  | `Authorization: Bearer <token>` | `204` — revokes the project's share token / `404` / `401`                                                                                              |
+| `GET /shared/:token`         | —                  | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                   |
 
 `project` is `{ id, name, createdAt, updatedAt, data }`, where `data` is an arbitrary
 JSON-serializable payload — `apps/web` is expected to pass its `VectorDocument` (or similar) here
@@ -92,12 +95,31 @@ moderator role against `@maker/accounts` the same way), just verifying identity 
 `GET /shared/:token` is the one deliberately unauthenticated route - a share link's whole purpose is
 letting anyone with the link view the project, so requiring a session there would defeat it.
 
+## Storage quotas
+
+`POST /projects` and `PUT /projects/:id` (when it changes `data`) enforce a per-user limit on
+project count and total stored bytes, based on the caller's `@maker/billing` plan tier:
+
+| Plan tier | Max projects | Max total data size |
+| --------- | ------------ | ------------------- |
+| `free`    | 10           | 5 MB                |
+| `pro`     | 200          | 250 MB              |
+
+`billingClient.ts`'s `getPlanTier(userId)` calls `@maker/billing`'s `GET /subscription?userId=` to
+find the caller's tier (defaulting to `free` for anyone with no active subscription, matching
+`@maker/billing`'s own default), and `quotas.ts`'s `quotaForPlanTier` maps that tier to the limits
+above - falling back to the `free` limits for any tier it doesn't recognize, so an unexpected value
+is never treated as unlimited. `projects.ts`'s `assertWithinQuota` then sums a user's _other_
+projects' `data_size_bytes` (a column maintained alongside each save, so this never has to re-fetch
+every project's data from S3 just to measure it) and rejects the write with `QuotaExceededError`
+(`402 Payment Required`) if it would put them over either limit. Project count only factors into
+`POST /projects` - updating an existing project's `data` never changes how many projects the user
+has, only how large this one is.
+
 ## What's not here yet
 
 - **Thumbnails/previews** — `GET /projects` returns metadata only, no preview image. Would likely
   live alongside the design JSON in the same S3 bucket once `apps/web` renders one to upload.
-- **Storage quotas per plan tier** — `@maker/billing` knows a user's plan, but nothing here checks
-  it or limits project count/size by tier yet.
 - **Collaborative editing** — this is single-writer save/load, not realtime multi-user sync.
 
 ## Testing note

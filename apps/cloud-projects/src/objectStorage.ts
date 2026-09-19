@@ -54,19 +54,24 @@ export function projectStorageKey(userId: string, projectId: string): string {
   return `projects/${userId}/${projectId}.json`;
 }
 
+/** Writes `data` to `key` and returns the serialized byte size written - callers (`projects.ts`)
+ * use this to track each project's storage footprint for quota enforcement, without needing to
+ * JSON.stringify `data` a second time themselves just to measure it. */
 export async function putProjectData(
   store: ObjectStore,
   key: string,
   data: unknown,
-): Promise<void> {
+): Promise<number> {
+  const body = JSON.stringify(data);
   await store.client.send(
     new PutObjectCommand({
       Bucket: store.bucket,
       Key: key,
-      Body: JSON.stringify(data),
+      Body: body,
       ContentType: "application/json",
     }),
   );
+  return Buffer.byteLength(body, "utf-8");
 }
 
 export async function getProjectData(store: ObjectStore, key: string): Promise<unknown> {
