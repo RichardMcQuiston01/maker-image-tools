@@ -78,6 +78,12 @@ alone can't be replayed as a valid session. A production deployment fronting rea
 likely want httpOnly cookies + CSRF protection instead — out of scope for this initial in-repo
 service, same as `@maker/ai-inference`'s wide-open dev CORS policy.
 
+An expired session already fails `/me`/`validateSession` on its own, so this is table-size
+housekeeping rather than a security boundary: `createServer` also runs `deleteExpiredSessions`
+(`sessions.ts`) on an hourly timer for as long as the process stays up, deleting every session past
+its `expires_at`. There's still no separate cron/migration step to remember — it's just another
+thing the running server does for itself, the same way it applies pending migrations on boot.
+
 ## Roles
 
 Every user has a `role`: `user` (default) or `moderator`. There are two ways to grant it:
@@ -132,8 +138,6 @@ deployment enabling this needs to register a real OAuth app (redirect URI
 
 ## What's not here yet
 
-- **Expired-session cleanup** — an expired session simply fails `/me`/`validateSession`; nothing
-  deletes the row. A real deployment would run a periodic `DELETE FROM sessions WHERE expires_at < now()`.
 - **Password reset / email verification** — not yet implemented.
 - **A role-management UI** — `POST /users/:id/role` exists, but `apps/web` has no admin screen
   that calls it yet; granting/revoking moderator access today means calling the API directly.
