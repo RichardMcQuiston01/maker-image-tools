@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
-import { createSession } from "../src/sessions.js";
+import { createSession, validateSession } from "../src/sessions.js";
 import { createOAuthOnlyUser } from "../src/users.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
+import { startFakeMailProvider, type FakeMailProvider } from "./fakeMailProvider.js";
 
 describe("accounts server", () => {
   let pool: Pool;
@@ -317,6 +318,116 @@ describe("accounts server", () => {
           Authorization: `Bearer ${session.token}`,
         },
         body: JSON.stringify({ password: "short" }),
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe("POST /password-reset/request and /password-reset/confirm", () => {
+    const ENV_KEYS = ["MAIL_API_KEY", "MAIL_FROM_ADDRESS", "MAIL_API_URL", "WEB_APP_URL"] as const;
+    let provider: FakeMailProvider;
+    const originalEnv: Record<string, string | undefined> = {};
+
+    function extractToken(emailText: string): string {
+      const match = emailText.match(/token=(\S+)/);
+      if (!match) throw new Error(`No token found in email text: ${emailText}`);
+      return decodeURIComponent(match[1]!);
+    }
+
+    beforeEach(async () => {
+      for (const key of ENV_KEYS) originalEnv[key] = process.env[key];
+      provider = await startFakeMailProvider();
+      process.env.MAIL_API_KEY = "fake-mail-api-key";
+      process.env.MAIL_FROM_ADDRESS = "accounts@example.com";
+      process.env.MAIL_API_URL = provider.baseUrl;
+      process.env.WEB_APP_URL = "http://localhost:5173";
+    });
+
+    afterEach(async () => {
+      await provider.close();
+      for (const key of ENV_KEYS) {
+        if (originalEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = originalEnv[key];
+      }
+    });
+
+    it("emails a reset link and lets the token confirm a new password with a fresh session", async () => {
+      const signupResponse = await signup("ada@example.com", "old-password1");
+      const { token: oldSessionToken } = await signupResponse.json();
+
+      const requestResponse = await fetch(`${baseUrl}/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com" }),
+      });
+      expect(requestResponse.status).toBe(202);
+      expect(provider.sent).toHaveLength(1);
+      const resetToken = extractToken(provider.sent[0]!.text);
+      expect(provider.sent[0]!.text).toContain("http://localhost:5173/#/reset-password");
+
+      const confirmResponse = await fetch(`${baseUrl}/password-reset/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken, password: "new-password1" }),
+      });
+      expect(confirmResponse.status).toBe(200);
+      const confirmBody = await confirmResponse.json();
+      expect(confirmBody.user.email).toBe("ada@example.com");
+      expect(typeof confirmBody.token).toBe("string");
+
+      const login = await fetch(`${baseUrl}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com", password: "new-password1" }),
+      });
+      expect(login.status).toBe(200);
+
+      // The old session should have been revoked by the reset.
+      expect(await validateSession(pool, oldSessionToken)).toBeUndefined();
+    });
+
+    it("responds the same way whether or not the email is registered", async () => {
+      const known = await signup("ada@example.com", "old-password1");
+      expect(known.status).toBe(201);
+
+      const knownRequest = await fetch(`${baseUrl}/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com" }),
+      });
+      const unknownRequest = await fetch(`${baseUrl}/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "nobody@example.com" }),
+      });
+
+      expect(knownRequest.status).toBe(unknownRequest.status);
+      expect(await knownRequest.json()).toEqual(await unknownRequest.json());
+      expect(provider.sent).toHaveLength(1); // only the registered email actually got one
+    });
+
+    it("rejects an invalid or expired token with 400", async () => {
+      const response = await fetch(`${baseUrl}/password-reset/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "not-a-real-token", password: "new-password1" }),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("rejects a too-short new password with 400", async () => {
+      await signup("ada@example.com", "old-password1");
+      await fetch(`${baseUrl}/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com" }),
+      });
+      const token = extractToken(provider.sent[0]!.text);
+
+      const response = await fetch(`${baseUrl}/password-reset/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password: "short" }),
       });
       expect(response.status).toBe(400);
     });

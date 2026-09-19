@@ -18,19 +18,21 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 
 ## Environment variables
 
-| Variable                | Required               | Default | Used by                                                                                   |
-| ----------------------- | ---------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `PORT`                  | no                     | `8788`  | server listen port                                                                        |
-| `DATABASE_URL`          | yes                    | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_accounts` |
-| `MODERATOR_EMAILS`      | no                     | —       | comma-separated emails to auto-promote to the `moderator` role (see below)                |
-| `ACCOUNTS_BASE_URL`     | yes, for OAuth         | —       | this service's own publicly reachable base URL, used to build the OAuth `redirect_uri`    |
-| `WEB_APP_URL`           | yes, for OAuth         | —       | `apps/web`'s origin; the OAuth callback redirects here with a token (or an error)         |
-| `GOOGLE_CLIENT_ID`      | yes, for Google login  | —       | Google OAuth app client ID                                                                |
-| `GOOGLE_CLIENT_SECRET`  | yes, for Google login  | —       | Google OAuth app client secret                                                            |
-| `GITHUB_CLIENT_ID`      | yes, for GitHub login  | —       | GitHub OAuth app client ID                                                                |
-| `GITHUB_CLIENT_SECRET`  | yes, for GitHub login  | —       | GitHub OAuth app client secret                                                            |
-| `DISCORD_CLIENT_ID`     | yes, for Discord login | —       | Discord OAuth app client ID                                                               |
-| `DISCORD_CLIENT_SECRET` | yes, for Discord login | —       | Discord OAuth app client secret                                                           |
+| Variable                | Required                | Default | Used by                                                                                   |
+| ----------------------- | ----------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `PORT`                  | no                      | `8788`  | server listen port                                                                        |
+| `DATABASE_URL`          | yes                     | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_accounts` |
+| `MODERATOR_EMAILS`      | no                      | —       | comma-separated emails to auto-promote to the `moderator` role (see below)                |
+| `ACCOUNTS_BASE_URL`     | yes, for OAuth          | —       | this service's own publicly reachable base URL, used to build the OAuth `redirect_uri`    |
+| `WEB_APP_URL`           | yes, for OAuth          | —       | `apps/web`'s origin; the OAuth callback redirects here with a token (or an error)         |
+| `GOOGLE_CLIENT_ID`      | yes, for Google login   | —       | Google OAuth app client ID                                                                |
+| `GOOGLE_CLIENT_SECRET`  | yes, for Google login   | —       | Google OAuth app client secret                                                            |
+| `GITHUB_CLIENT_ID`      | yes, for GitHub login   | —       | GitHub OAuth app client ID                                                                |
+| `GITHUB_CLIENT_SECRET`  | yes, for GitHub login   | —       | GitHub OAuth app client secret                                                            |
+| `DISCORD_CLIENT_ID`     | yes, for Discord login  | —       | Discord OAuth app client ID                                                               |
+| `DISCORD_CLIENT_SECRET` | yes, for Discord login  | —       | Discord OAuth app client secret                                                           |
+| `MAIL_API_KEY`          | yes, for password reset | —       | API key for the email provider (see "Password reset" below)                               |
+| `MAIL_FROM_ADDRESS`     | yes, for password reset | —       | the `From` address on emails this service sends                                           |
 
 Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
 missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
@@ -38,7 +40,9 @@ be mistaken for a working configuration. Each OAuth provider fails the same way,
 signing up/logging in with email/password works with none of the OAuth variables set; hitting
 `/oauth/google/...` without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (or `/oauth/github/...`/
 `/oauth/discord/...` without their GitHub/Discord equivalents) responds `500`, and every provider
-also needs `ACCOUNTS_BASE_URL`/`WEB_APP_URL` set to complete a login.
+also needs `ACCOUNTS_BASE_URL`/`WEB_APP_URL` set to complete a login. `POST /password-reset/request`
+fails the same way without `MAIL_API_KEY`/`MAIL_FROM_ADDRESS`/`WEB_APP_URL` set - see "Password
+reset" below.
 
 ## Local Postgres
 
@@ -63,6 +67,8 @@ export DATABASE_URL=postgres://maker:maker@localhost:5432/maker_accounts
 | `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                                                                       |
 | `POST /users/:id/role`          | `{ role }`            | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid role / `401` invalid/expired token / `403` caller isn't a moderator / `404` unknown target id |
 | `POST /me/password`             | `{ password }`        | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid password / `401` invalid/expired token / `409` account already has a password                 |
+| `POST /password-reset/request`  | `{ email }`           | —                               | `202`, always the same response whether or not the email is registered                                                       |
+| `POST /password-reset/confirm`  | `{ token, password }` | —                               | `200 { user, token }` / `400` invalid/expired/used token or invalid password                                                 |
 
 `GET /users/:id/role` is server-to-server: `apps/community-library` and `apps/material-db` call it
 to verify a caller-supplied `reviewerId` actually belongs to a `moderator` before honoring an
@@ -77,8 +83,8 @@ alongside `MODERATOR_EMAILS`.
 `POST /me/password` lets a signed-in user set a password for their own account - the one way an
 OAuth-only account (`password_hash IS NULL`, see "OAuth login" below) gains the ability to also log
 in with `POST /login`. It only ever sets a password where none exists yet (a `409` otherwise);
-changing an existing password would need the current one verified first, which is a different,
-larger feature (see "Password reset" in "What's not here yet").
+changing an existing password without proving current control of the account first needs a
+different flow - see "Password reset" below.
 
 `user` is `{ id, email, planTier, role, hasPassword, createdAt }`. Sessions are bearer tokens (not cookies): the
 client is expected to hold the token (e.g. in memory or `localStorage`) and send it as
@@ -160,9 +166,47 @@ screen and redirect behavior; a deployment enabling one needs to register a real
 (redirect URI `<ACCOUNTS_BASE_URL>/oauth/<provider>/callback`) and try the full round trip by hand
 at least once.
 
+## Password reset
+
+`POST /password-reset/request` (`{ email }`) and `POST /password-reset/confirm`
+(`{ token, password }`) let anyone who controls an email address set a new password for the
+matching account - both for a forgotten password on an existing password account, and (doubling as
+a way to gain password login without going through a provider) for an OAuth-only account that's
+never had a password.
+
+`requestPasswordReset` (`passwordReset.ts`) always responds the same way whether or not the email
+is registered - it silently does nothing for an unknown email rather than a `404`, so this endpoint
+can't be used to enumerate which emails have accounts. For a known email, it generates a random
+token, stores only its SHA-256 hash (`password_reset_tokens`, mirroring how `sessions.ts` never
+stores a session's plaintext token either), and emails a link built from `WEB_APP_URL` - `apps/web`'s
+`ResetPasswordPanel` (`.../#/reset-password?token=...`) reads the token and posts the new password to
+`confirm`.
+
+`confirmPasswordReset` consumes the token with a single atomic `UPDATE ... WHERE used_at IS NULL AND
+expires_at > now() RETURNING ...`, so two concurrent confirms with the same token can't both
+succeed, and a token can only ever set one password. Tokens expire after 1 hour. A successful reset
+also revokes every existing session for the account (`deleteSessionsForUser`, `sessions.ts`) - the
+same moment someone regains control of an account via email is exactly when a leaked/shared session
+token should stop working, rather than staying valid until it naturally expires. The new password is
+still validated (length, etc.) _before_ the token is touched, so a bad password never burns a token
+the caller could otherwise still use once they fix it.
+
+Sending the actual email goes through `mailer.ts`'s `sendMail` - a single `POST` to a Resend-shaped
+REST API (`MAIL_API_URL`, defaulting to `https://api.resend.com/emails`) with no SDK, the same plain-REST
+style as `oauth.ts`'s provider calls. It fails fast (`MailerConfigError`) if `MAIL_API_KEY`/
+`MAIL_FROM_ADDRESS` aren't set, matching every other external-service client in this repo (Stripe,
+S3, OAuth, `GEMINI_API_KEY`).
+
+**Testing note:** same rationale as `fakeOAuthProvider.ts` - there's no way to reach a real email
+provider or use a real API key from this sandbox, so `test/fakeMailProvider.ts` is a tiny local HTTP
+server standing in for Resend, pointed at via `MAIL_API_URL` in tests. `test/mailer.test.ts` and
+`test/passwordReset.test.ts` exercise the real `sendMail`/token code paths against it.
+
 ## What's not here yet
 
-- **Password reset / email verification** — not yet implemented.
+- **Email verification** — a signup or OAuth login isn't currently required to have a verified
+  email address beyond what the OAuth provider itself already checked; a password signup's email is
+  trusted as given.
 - **Providers beyond Google/GitHub/Discord** — `oauth.ts`'s `OAuthProvider` shape is
   provider-agnostic (any provider is just a new factory function keyed by name), but only these
   three are wired up.

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AuthPanel } from "../components/AuthPanel";
 import { AuthProvider } from "../hooks/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -274,6 +275,112 @@ describe("AuthPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: "Set password" }));
 
       expect(await screen.findByText(/Setting a password failed with 409/)).toBeInTheDocument();
+    });
+  });
+
+  describe("Forgot password?", () => {
+    it("switches to the request-reset form and back", async () => {
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+      expect(screen.queryByPlaceholderText("Password")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Send reset link" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Back to log in" }));
+      expect(await screen.findByRole("button", { name: "Log in" })).toBeInTheDocument();
+    });
+
+    it("requests a reset link and shows the generic confirmation", async () => {
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(jsonResponse(202, { message: "sent" }));
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+      fireEvent.change(screen.getByPlaceholderText("Email"), {
+        target: { value: "ada@example.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send reset link" }));
+
+      expect(
+        await screen.findByText(/If an account exists for that email, a password reset link/),
+      ).toBeInTheDocument();
+
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(String(url)).toContain("/password-reset/request");
+      expect(JSON.parse(String(init?.body))).toEqual({ email: "ada@example.com" });
+    });
+
+    it("shows an error when the request fails", async () => {
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+      fireEvent.change(screen.getByPlaceholderText("Email"), {
+        target: { value: "ada@example.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send reset link" }));
+
+      expect(await screen.findByText(/Request failed with 500/)).toBeInTheDocument();
+    });
+
+    it("shows the signed-in view over a stale request-reset mode once signed in from outside", async () => {
+      // Regression test: a sign-in can happen from outside this component
+      // (e.g. ResetPasswordPanel adopting a session after a successful
+      // password reset) without AuthPanel's own `mode` state ever changing
+      // back to "login" - the signed-in view must still win.
+      function Harness() {
+        const { completeOAuthLogin } = useAuth();
+        return (
+          <>
+            <AuthPanel />
+            <button onClick={() => void completeOAuthLogin("external-token")}>
+              Simulate external sign-in
+            </button>
+          </>
+        );
+      }
+
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          user: {
+            id: "u9",
+            email: "reset-user@example.com",
+            planTier: "free",
+            hasPassword: true,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        }),
+      );
+
+      render(
+        <AuthProvider>
+          <Harness />
+        </AuthProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+      expect(screen.getByRole("button", { name: "Send reset link" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Simulate external sign-in" }));
+
+      expect(await screen.findByText("reset-user@example.com")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Send reset link" })).not.toBeInTheDocument();
     });
   });
 

@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { ACCOUNTS_URL } from "../lib/accountsUrl";
 
-type Mode = "login" | "signup";
+type Mode = "login" | "signup" | "request-reset";
 
 /**
  * Owns its own "does this account have a password" state, seeded once from
@@ -104,6 +104,77 @@ function ConnectProviderLinks({ token }: { token: string }) {
   );
 }
 
+/**
+ * The "Forgot password?" flow - a bare email field posted to
+ * `POST /password-reset/request`, which always responds the same way
+ * whether or not the email is registered (see server.ts), so this only ever
+ * shows the same generic "link was sent" confirmation rather than revealing
+ * whether an account exists.
+ */
+function ForgotPasswordForm({ onBackToLogin }: { onBackToLogin: () => void }) {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const handleSubmit = useCallback(async () => {
+    if (!email) return;
+    try {
+      setBusy(true);
+      setError(null);
+      const response = await fetch(`${ACCOUNTS_URL}/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) {
+        throw new Error(`Request failed with ${response.status}`);
+      }
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to request a password reset");
+    } finally {
+      setBusy(false);
+    }
+  }, [email]);
+
+  if (sent) {
+    return (
+      <div className="auth-panel">
+        <p className="auth-panel__hint">
+          If an account exists for that email, a password reset link was sent.
+        </p>
+        <button type="button" className="auth-panel__switch" onClick={onBackToLogin}>
+          Back to log in
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-panel">
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        disabled={busy}
+        onChange={(event) => setEmail(event.target.value)}
+      />
+      <button type="button" disabled={busy || !email} onClick={() => void handleSubmit()}>
+        Send reset link
+      </button>
+      <button type="button" className="auth-panel__switch" disabled={busy} onClick={onBackToLogin}>
+        Back to log in
+      </button>
+      {error && (
+        <p role="alert" className="auth-panel__error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function AuthPanel() {
   const { status, user, token, error, signup, login, logout } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
@@ -137,6 +208,15 @@ export function AuthPanel() {
     );
   }
 
+  // Checked after signed-in, not before: a sign-in can happen from outside
+  // this component too (e.g. ResetPasswordPanel adopting a session after a
+  // successful password reset) without this component's own `mode` ever
+  // changing - the signed-in view must win over a stale "request-reset" mode
+  // left over from before that happened.
+  if (mode === "request-reset") {
+    return <ForgotPasswordForm onBackToLogin={() => setMode("login")} />;
+  }
+
   return (
     <div className="auth-panel">
       <input
@@ -164,6 +244,16 @@ export function AuthPanel() {
       >
         {mode === "signup" ? "Have an account? Log in" : "Need an account? Sign up"}
       </button>
+      {mode === "login" && (
+        <button
+          type="button"
+          className="auth-panel__switch"
+          disabled={busy}
+          onClick={() => setMode("request-reset")}
+        >
+          Forgot password?
+        </button>
+      )}
       {error && (
         <p role="alert" className="auth-panel__error">
           {error}

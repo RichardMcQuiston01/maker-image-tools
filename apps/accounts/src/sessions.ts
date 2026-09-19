@@ -51,6 +51,16 @@ export async function deleteSession(pool: Pool, token: string): Promise<void> {
 }
 
 /**
+ * Deletes every session belonging to `userId` - used after a password reset
+ * (`passwordReset.ts`) so a leaked or shared session token stops working the
+ * moment someone regains control of the account via email, rather than
+ * staying valid until it naturally expires.
+ */
+export async function deleteSessionsForUser(pool: Pool, userId: string): Promise<void> {
+  await pool.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+}
+
+/**
  * Deletes every session past its `expires_at`, returning how many rows were
  * removed. An expired session already fails `validateSession`, so this is
  * housekeeping (bounding the table's size) rather than a security fix -

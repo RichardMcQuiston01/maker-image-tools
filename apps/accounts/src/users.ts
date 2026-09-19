@@ -168,6 +168,28 @@ export async function setPasswordForOAuthOnlyUser(
   throw new PasswordAlreadySetError(`User (${id}) already has a password set`);
 }
 
+/**
+ * Unconditionally sets `id`'s password, returning the updated user, or
+ * `undefined` if no user has that id. Unlike `setPasswordForOAuthOnlyUser`,
+ * this overwrites any existing password - callers are expected to have
+ * already verified the caller is allowed to do this (see
+ * `passwordReset.ts`'s `confirmPasswordReset`, which only calls this after
+ * consuming a valid password-reset token).
+ */
+export async function setPasswordForUser(
+  pool: Pool,
+  id: string,
+  password: string,
+): Promise<User | undefined> {
+  validatePassword(password);
+  const passwordHash = await hashPassword(password);
+  const { rows } = await pool.query<UserRow>(
+    "UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING *",
+    [passwordHash, id],
+  );
+  return rows[0] ? toUser(rows[0]) : undefined;
+}
+
 /** Verifies email+password and returns the matching user, or `undefined` if either is wrong. */
 export async function authenticate(
   pool: Pool,
