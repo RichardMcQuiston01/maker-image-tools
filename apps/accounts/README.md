@@ -58,7 +58,7 @@ export DATABASE_URL=postgres://maker:maker@localhost:5432/maker_accounts
 | `POST /login`                   | `{ email, password }` | —                               | `200 { user, token }` / `401` if wrong                                                                                       |
 | `POST /logout`                  | —                     | `Authorization: Bearer <token>` | `204`                                                                                                                        |
 | `GET /me`                       | —                     | `Authorization: Bearer <token>` | `200 { user }` / `401` if invalid/expired                                                                                    |
-| `GET /oauth/:provider/start`    | —                     | —                               | `302` to the provider's consent page / `404` unknown provider                                                                |
+| `GET /oauth/:provider/start`    | —                     | optional `?linkToken=<token>`   | `302` to the provider's consent page / `404` unknown provider / `401` invalid/expired `linkToken`                            |
 | `GET /oauth/:provider/callback` | —                     | —                               | `302` back to `WEB_APP_URL` with `?token=` or `?error=` / `404` unknown provider                                             |
 | `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                                                                       |
 | `POST /users/:id/role`          | `{ role }`            | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid role / `401` invalid/expired token / `403` caller isn't a moderator / `404` unknown target id |
@@ -138,6 +138,18 @@ a secret generated once per server process - enough to detect tampering and expi
 without a database table or an extra required env var, since it only needs to survive one browser
 round trip within a single process's uptime.
 
+**Connecting another provider from a signed-in session:** passing `?linkToken=<session token>` to
+`GET /oauth/:provider/start` runs the same authorization-code + PKCE round trip, but with that
+token's user id embedded (also HMAC-signed) in the `state` alongside the PKCE `code_verifier` - an
+invalid/expired `linkToken` fails immediately with `401`, before ever redirecting to the provider.
+On callback, `linkOAuthIdentityToUser` (`oauthIdentities.ts`) attaches the new identity directly to
+that user id instead of running the ordinary find-or-create-by-email flow above, so it never matches
+by email or creates a new user. The `(provider, providerUserId)` pair is still globally unique
+(`oauth_identities`'s primary key), so linking an identity already linked to a different account
+fails with a redirect `?error=...` the same way any other callback failure does. `apps/web`'s
+`AuthPanel` exposes this as "Connect Google" / "Connect GitHub" / "Connect Discord" links for a
+signed-in user, each carrying the current session token as `linkToken`.
+
 **Testing note:** there's no way to register a real Google/GitHub/Discord OAuth app or reach any
 provider's servers from this sandbox, so `test/oauth.test.ts` runs the exact same code path against
 a tiny local fake HTTP provider (`test/fakeOAuthProvider.ts`) instead, via each provider's URL
@@ -151,9 +163,6 @@ at least once.
 ## What's not here yet
 
 - **Password reset / email verification** — not yet implemented.
-- **Linking a second OAuth provider from a signed-in session** — the only way to attach another
-  provider to an existing account today is signing in with an email that matches it, which links
-  automatically; there's no explicit "connect another provider" action while already signed in.
 - **Providers beyond Google/GitHub/Discord** — `oauth.ts`'s `OAuthProvider` shape is
   provider-agnostic (any provider is just a new factory function keyed by name), but only these
   three are wired up.

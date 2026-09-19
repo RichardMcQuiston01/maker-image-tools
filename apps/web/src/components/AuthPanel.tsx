@@ -79,8 +79,33 @@ function SetPasswordForm({ initiallyHasPassword }: { initiallyHasPassword: boole
   );
 }
 
+/**
+ * Links for attaching another OAuth provider to the signed-in account, via
+ * `/oauth/:provider/start?linkToken=<session token>` - @maker/accounts
+ * validates the session server-side and links the resulting identity to that
+ * caller instead of running the ordinary login flow. The round trip lands
+ * back on `OAuthCallbackPanel` exactly like a login would (same success/error
+ * query params), so no special-casing is needed there.
+ */
+function ConnectProviderLinks({ token }: { token: string }) {
+  return (
+    <div className="auth-panel__oauth auth-panel__oauth--connect">
+      <p className="auth-panel__hint">Connect another sign-in method:</p>
+      <a href={`${ACCOUNTS_URL}/oauth/google/start?linkToken=${encodeURIComponent(token)}`}>
+        Connect Google
+      </a>
+      <a href={`${ACCOUNTS_URL}/oauth/github/start?linkToken=${encodeURIComponent(token)}`}>
+        Connect GitHub
+      </a>
+      <a href={`${ACCOUNTS_URL}/oauth/discord/start?linkToken=${encodeURIComponent(token)}`}>
+        Connect Discord
+      </a>
+    </div>
+  );
+}
+
 export function AuthPanel() {
-  const { status, user, error, signup, login, logout } = useAuth();
+  const { status, user, token, error, signup, login, logout } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -107,6 +132,7 @@ export function AuthPanel() {
           Log out
         </button>
         <SetPasswordForm key={user.id} initiallyHasPassword={user.hasPassword} />
+        {token && <ConnectProviderLinks token={token} />}
       </div>
     );
   }
