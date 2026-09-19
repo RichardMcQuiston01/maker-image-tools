@@ -17,6 +17,12 @@ import {
   linkOAuthIdentityToUser,
   OAuthIdentityAlreadyLinkedError,
 } from "./oauthIdentities.js";
+import { MailerConfigError } from "./mailer.js";
+import {
+  confirmPasswordReset,
+  InvalidPasswordResetTokenError,
+  requestPasswordReset,
+} from "./passwordReset.js";
 import {
   createSession,
   deleteExpiredSessions,
@@ -131,11 +137,17 @@ function requireOAuthEnv(name: string): string {
 }
 
 function errorStatus(err: unknown): number {
-  if (err instanceof DatabaseConfigError || err instanceof OAuthConfigError) return 500;
+  if (
+    err instanceof DatabaseConfigError ||
+    err instanceof OAuthConfigError ||
+    err instanceof MailerConfigError
+  )
+    return 500;
   if (
     err instanceof InvalidCredentialsFormatError ||
     err instanceof InvalidOAuthStateError ||
-    err instanceof InvalidRoleError
+    err instanceof InvalidRoleError ||
+    err instanceof InvalidPasswordResetTokenError
   )
     return 400;
   if (err instanceof NotAModeratorError) return 403;
@@ -256,6 +268,32 @@ export function createServer(pool: Pool = createPool()) {
             return;
           }
           sendJson(res, 200, { user: userJson(updated) });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/password-reset/request") {
+          const body = await parseJsonBody(req);
+          const email = requireString(body, "email");
+          const webAppUrl = requireOAuthEnv("WEB_APP_URL").replace(/\/$/, "");
+          await requestPasswordReset(pool, email, `${webAppUrl}/#/reset-password`);
+          // Always the same response, whether or not the email is registered -
+          // otherwise this endpoint would let a caller enumerate accounts.
+          sendJson(res, 202, {
+            message: "If an account exists for that email, a password reset link was sent.",
+          });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/password-reset/confirm") {
+          const body = await parseJsonBody(req);
+          const token = requireString(body, "token");
+          const password = requireString(body, "password");
+          const user = await syncModeratorRole(
+            pool,
+            await confirmPasswordReset(pool, token, password),
+          );
+          const session = await createSession(pool, user.id);
+          sendJson(res, 200, { user: userJson(user), token: session.token });
           return;
         }
 

@@ -131,6 +131,33 @@ body {
   color: light-dark(#b91c1c, #f87171);
 }
 
+.reset-password {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  max-width: 20rem;
+}
+
+.reset-password input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid light-dark(#bbb, #555);
+  border-radius: 0.375rem;
+  width: 100%;
+}
+
+.reset-password button {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid light-dark(#bbb, #555);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.reset-password__error {
+  color: light-dark(#b91c1c, #f87171);
+  margin: 0;
+}
+
 .app__main {
   flex: 1;
   padding: 1.5rem;
