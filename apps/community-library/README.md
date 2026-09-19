@@ -11,9 +11,11 @@ with no cross-service foreign keys — `apps/web` is the only thing that talks t
 these services for _data_, and it already has the design data loaded when the user clicks
 "publish," so there's nothing to fetch from elsewhere first.
 
-Like `@maker/billing`/`@maker/cloud-projects`/`@maker/material-db`, this service trusts the caller
-(`apps/web`, having already authenticated against `@maker/accounts`) to pass the correct `userId` —
-it doesn't itself validate bearer tokens or session cookies. `reviewerId` is different: `@maker/accounts`
+Like `@maker/billing`/`@maker/material-db`, this service trusts the caller (`apps/web`, having
+already authenticated against `@maker/accounts`) to pass the correct `userId` — it doesn't itself
+validate bearer tokens or session cookies (unlike `@maker/cloud-projects`, which now verifies a
+bearer token against `@maker/accounts`'s `GET /me` for every project-scoped route — see its own
+README's "Access control" section). `reviewerId` is different: `@maker/accounts`
 has a `role` field (`user`/`moderator`, see its README's "Roles" section), and `POST /listings/:id/approve`/`/reject`
 call `@maker/accounts`'s `GET /users/:id/role` synchronously to verify `reviewerId` actually belongs
 to a moderator before honoring the request — a `403` otherwise. This is the one synchronous

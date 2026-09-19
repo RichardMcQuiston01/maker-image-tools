@@ -5,11 +5,11 @@ Postgres, the actual design payload (layers/paths/settings) stored in an S3-comp
 store, and shareable read-only links. Lives in this monorepo as its own workspace app rather than a
 separate repo — see `ROADMAP.md` §8 for why.
 
-Like `@maker/billing`, this service trusts the caller (`apps/web`, having already authenticated
-against `@maker/accounts`) to pass the correct `userId` — it doesn't itself validate bearer tokens
-or session cookies. A production deployment fronting real end users would want that trust boundary
-tightened (e.g. a shared session-verification call), same caveat `@maker/accounts`'s README already
-notes for its own wide-open dev CORS policy.
+Every project-scoped route requires `Authorization: Bearer <token>` and verifies it against
+`@maker/accounts`'s `GET /me` (`accountsAuth.ts`'s `verifySession`) - the caller never supplies a
+`userId` directly, it's derived from the validated session. The one exception is `GET /shared/:token`,
+which is deliberately unauthenticated: that's the whole point of a share link. See "Access control"
+below for the details.
 
 ## Running
 
@@ -31,10 +31,12 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 | `S3_ACCESS_KEY_ID`     | yes      | —       | object storage credentials                                                                      |
 | `S3_SECRET_ACCESS_KEY` | yes      | —       | object storage credentials                                                                      |
 | `S3_REGION`            | no       | `auto`  | most S3-compatible providers other than AWS itself ignore this                                  |
+| `ACCOUNTS_URL`         | yes      | —       | `@maker/accounts`'s base URL, used to verify a caller's bearer token via `GET /me`              |
 
 Without `DATABASE_URL` (or without all four `S3_*` variables) set, every request responds `500`
 with a message explaining what's missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY`
-handling: no silent fallback that could be mistaken for a working configuration.
+handling: no silent fallback that could be mistaken for a working configuration. Every
+project-scoped route fails the same way without `ACCOUNTS_URL` set - see "Access control" below.
 
 ## Local Postgres + object storage
 
@@ -60,26 +62,38 @@ export S3_SECRET_ACCESS_KEY=makermaker
 
 ## API
 
-| Route                        | Body / Query               | Response                                                                                |
-| ---------------------------- | -------------------------- | --------------------------------------------------------------------------------------- |
-| `POST /projects`             | `{ userId, name, data }`   | `201 { project }` / `400` for a blank `name` or missing `data`                          |
-| `GET /projects`              | `?userId=`                 | `200 { projects }` — summaries only (no `data`), newest-updated first                   |
-| `GET /projects/:id`          | `?userId=`                 | `200 { project }` (includes `data`) / `404` if missing or not owned by `userId`         |
-| `PUT /projects/:id`          | `{ userId, name?, data? }` | `200 { project }` — updates whichever of `name`/`data` is present / `404`               |
-| `DELETE /projects/:id`       | `?userId=`                 | `204` / `404`                                                                           |
-| `POST /projects/:id/share`   | `{ userId }`               | `200 { token }` — creates a share token if the project doesn't already have one / `404` |
-| `DELETE /projects/:id/share` | `{ userId }`               | `204` — revokes the project's share token / `404`                                       |
-| `GET /shared/:token`         | —                          | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked    |
+| Route                        | Body / Query       | Auth                            | Response                                                                                        |
+| ---------------------------- | ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `POST /projects`             | `{ name, data }`   | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token    |
+| `GET /projects`              | —                  | `Authorization: Bearer <token>` | `200 { projects }` — summaries only (no `data`), newest-updated first / `401`                   |
+| `GET /projects/:id`          | —                  | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or not owned by the caller / `401`       |
+| `PUT /projects/:id`          | `{ name?, data? }` | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401`               |
+| `DELETE /projects/:id`       | —                  | `Authorization: Bearer <token>` | `204` / `404` / `401`                                                                           |
+| `POST /projects/:id/share`   | —                  | `Authorization: Bearer <token>` | `200 { token }` — creates a share token if the project doesn't already have one / `404` / `401` |
+| `DELETE /projects/:id/share` | —                  | `Authorization: Bearer <token>` | `204` — revokes the project's share token / `404` / `401`                                       |
+| `GET /shared/:token`         | —                  | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked            |
 
 `project` is `{ id, name, createdAt, updatedAt, data }`, where `data` is an arbitrary
 JSON-serializable payload — `apps/web` is expected to pass its `VectorDocument` (or similar) here
 verbatim; this service never inspects its shape.
 
+## Access control
+
+Every project-scoped route resolves the caller's `userId` from their bearer token, never from a
+client-supplied value - `accountsAuth.ts`'s `verifySession(token)` calls `@maker/accounts`'s
+`GET /me` and returns the id of whichever user that token belongs to (or `undefined` for a
+missing/invalid/expired one, which the route maps to `401`). `projects.ts`'s existing
+`WHERE id = $1 AND user_id = $2` ownership checks then do the rest: a valid token for user A can
+never read, update, delete, or (re)share a project belonging to user B - it fails with the exact
+same `404` a genuinely unknown project id would, rather than leaking whether the id exists. This
+mirrors `@maker/community-library`/`@maker/material-db`'s `moderatorAuth.ts` (which verifies a
+moderator role against `@maker/accounts` the same way), just verifying identity instead of a role.
+
+`GET /shared/:token` is the one deliberately unauthenticated route - a share link's whole purpose is
+letting anyone with the link view the project, so requiring a session there would defeat it.
+
 ## What's not here yet
 
-- **Access control beyond the `userId` trust boundary** — see the note at the top: any caller that
-  knows a `userId` can act as that user. Fine for a single trusted `apps/web` frontend; not fine for
-  untrusted direct API access.
 - **Thumbnails/previews** — `GET /projects` returns metadata only, no preview image. Would likely
   live alongside the design JSON in the same S3 bucket once `apps/web` renders one to upload.
 - **Storage quotas per plan tier** — `@maker/billing` knows a user's plan, but nothing here checks

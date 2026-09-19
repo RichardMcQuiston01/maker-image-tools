@@ -96,8 +96,8 @@ describe("CloudProjectsPanel", () => {
     const [url, init] = fetchMock.mock.calls[2]!;
     expect(String(url)).toContain("/projects");
     expect(init?.method).toBe("POST");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      userId: SIGNED_IN_USER.id,
       name: "New Project",
       data: EMPTY_DOC,
     });
@@ -224,7 +224,7 @@ describe("CloudProjectsPanel", () => {
     const [url, init] = fetchMock.mock.calls[3]!;
     expect(String(url)).toContain("/projects/p1/share");
     expect(init?.method).toBe("DELETE");
-    expect(JSON.parse(String(init?.body))).toEqual({ userId: SIGNED_IN_USER.id });
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
     await waitFor(() => expect(screen.queryByText(/share-token-123/)).not.toBeInTheDocument());
   });
 
@@ -265,8 +265,9 @@ describe("CloudProjectsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    const [loadUrl] = fetchMock.mock.calls[2]!;
-    expect(String(loadUrl)).toContain(`/projects/p1?userId=${SIGNED_IN_USER.id}`);
+    const [loadUrl, loadInit] = fetchMock.mock.calls[2]!;
+    expect(String(loadUrl)).toContain("/projects/p1");
+    expect((loadInit?.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
     const [listingUrl, listingInit] = fetchMock.mock.calls[3]!;
     expect(String(listingUrl)).toContain("/listings");
     expect(listingInit?.method).toBe("POST");

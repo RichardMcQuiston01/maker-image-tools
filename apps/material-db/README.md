@@ -6,9 +6,11 @@ own workspace app rather than a separate repo — see `ROADMAP.md` §8 for why. 
 (Stage 4B's bundled, hand-curated static JSON) has been migrated into this service as a one-time
 seed — see "Seeding from `packages/material-library`" below.
 
-Like `@maker/billing`/`@maker/cloud-projects`, this service trusts the caller (`apps/web`, having
-already authenticated against `@maker/accounts`) to pass the correct `userId` — it doesn't itself
-validate bearer tokens or session cookies. `reviewerId` is different: `@maker/accounts` has a `role`
+Like `@maker/billing`, this service trusts the caller (`apps/web`, having already authenticated
+against `@maker/accounts`) to pass the correct `userId` — it doesn't itself validate bearer tokens
+or session cookies (unlike `@maker/cloud-projects`, which now verifies a bearer token against
+`@maker/accounts`'s `GET /me` for every project-scoped route — see its own README's "Access
+control" section). `reviewerId` is different: `@maker/accounts` has a `role`
 field (`user`/`moderator`, see its README's "Roles" section), and `POST /presets/:id/approve`/`/reject`
 call `@maker/accounts`'s `GET /users/:id/role` synchronously to verify `reviewerId` actually belongs
 to a moderator before honoring the request — a `403` otherwise. This is the one synchronous
