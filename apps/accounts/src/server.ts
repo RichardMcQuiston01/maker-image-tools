@@ -19,6 +19,12 @@ import {
 } from "./oauthIdentities.js";
 import { MailerConfigError } from "./mailer.js";
 import {
+  confirmEmailVerification,
+  EmailAlreadyVerifiedError,
+  InvalidEmailVerificationTokenError,
+  sendVerificationEmail,
+} from "./emailVerification.js";
+import {
   confirmPasswordReset,
   InvalidPasswordResetTokenError,
   requestPasswordReset,
@@ -90,6 +96,7 @@ function userJson(user: User) {
     planTier: user.planTier,
     role: user.role,
     hasPassword: user.hasPassword,
+    emailVerified: user.emailVerified,
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -136,6 +143,26 @@ function requireOAuthEnv(name: string): string {
   return value;
 }
 
+/**
+ * Fires off a verification email for a freshly-signed-up user without
+ * blocking (or failing) the signup response on it - creating an account must
+ * keep working even if `MAIL_API_KEY`/`MAIL_FROM_ADDRESS`/`WEB_APP_URL`
+ * aren't configured, the same way signup already works with none of the
+ * OAuth env vars set. A delivery failure here is logged, not surfaced to the
+ * caller; the user can still request a fresh one later via
+ * `POST /me/resend-verification`.
+ */
+function sendVerificationEmailBestEffort(pool: Pool, userId: string): void {
+  try {
+    const webAppUrl = requireOAuthEnv("WEB_APP_URL").replace(/\/$/, "");
+    sendVerificationEmail(pool, userId, `${webAppUrl}/#/verify-email`).catch((err: unknown) => {
+      console.error("Failed to send verification email:", err);
+    });
+  } catch (err) {
+    console.error("Failed to send verification email:", err);
+  }
+}
+
 function errorStatus(err: unknown): number {
   if (
     err instanceof DatabaseConfigError ||
@@ -147,14 +174,16 @@ function errorStatus(err: unknown): number {
     err instanceof InvalidCredentialsFormatError ||
     err instanceof InvalidOAuthStateError ||
     err instanceof InvalidRoleError ||
-    err instanceof InvalidPasswordResetTokenError
+    err instanceof InvalidPasswordResetTokenError ||
+    err instanceof InvalidEmailVerificationTokenError
   )
     return 400;
   if (err instanceof NotAModeratorError) return 403;
   if (
     err instanceof EmailAlreadyRegisteredError ||
     err instanceof PasswordAlreadySetError ||
-    err instanceof OAuthIdentityAlreadyLinkedError
+    err instanceof OAuthIdentityAlreadyLinkedError ||
+    err instanceof EmailAlreadyVerifiedError
   )
     return 409;
   const message = err instanceof Error ? err.message : "";
@@ -202,6 +231,7 @@ export function createServer(pool: Pool = createPool()) {
           const password = requireString(body, "password");
           const user = await syncModeratorRole(pool, await createUser(pool, email, password));
           const session = await createSession(pool, user.id);
+          sendVerificationEmailBestEffort(pool, user.id);
           sendJson(res, 201, { user: userJson(user), token: session.token });
           return;
         }
@@ -294,6 +324,31 @@ export function createServer(pool: Pool = createPool()) {
           );
           const session = await createSession(pool, user.id);
           sendJson(res, 200, { user: userJson(user), token: session.token });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/verify-email") {
+          const body = await parseJsonBody(req);
+          const token = requireString(body, "token");
+          const user = await confirmEmailVerification(pool, token);
+          sendJson(res, 200, { user: userJson(user) });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/me/resend-verification") {
+          const token = bearerToken(req);
+          if (!token) {
+            sendJson(res, 401, { error: "Missing bearer token" });
+            return;
+          }
+          const validated = await validateSession(pool, token);
+          if (!validated) {
+            sendJson(res, 401, { error: "Invalid or expired session" });
+            return;
+          }
+          const webAppUrl = requireOAuthEnv("WEB_APP_URL").replace(/\/$/, "");
+          await sendVerificationEmail(pool, validated.id, `${webAppUrl}/#/verify-email`);
+          sendJson(res, 202, { message: "Verification email sent." });
           return;
         }
 

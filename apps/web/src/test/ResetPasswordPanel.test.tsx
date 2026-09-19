@@ -16,6 +16,7 @@ const SIGNED_IN_USER = {
   planTier: "free",
   role: "user",
   hasPassword: true,
+  emailVerified: true,
   createdAt: "2026-01-01T00:00:00Z",
 };
 

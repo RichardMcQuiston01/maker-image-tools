@@ -80,6 +80,59 @@ function SetPasswordForm({ initiallyHasPassword }: { initiallyHasPassword: boole
 }
 
 /**
+ * Prompts a signed-in user with an unverified email to resend the
+ * verification link. Unlike `SetPasswordForm`, resending doesn't itself
+ * change `user.emailVerified` - only confirming the link (`EmailVerificationPanel`)
+ * does that, and that's a different component - so there's no risk of this
+ * component's own success action unmounting itself before its message shows,
+ * and it can just render off the live `user.emailVerified` the caller passes.
+ */
+function VerifyEmailHint() {
+  const { token } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const handleResend = useCallback(async () => {
+    if (!token) return;
+    try {
+      setBusy(true);
+      setError(null);
+      const response = await fetch(`${ACCOUNTS_URL}/me/resend-verification`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error(`Resending the verification email failed with ${response.status}`);
+      }
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend the verification email");
+    } finally {
+      setBusy(false);
+    }
+  }, [token]);
+
+  return (
+    <div className="auth-panel__verify-email">
+      <p className="auth-panel__hint">
+        {sent ? "Verification email sent - check your inbox." : "Please verify your email address."}
+      </p>
+      {error && (
+        <p role="alert" className="auth-panel__error">
+          {error}
+        </p>
+      )}
+      {!sent && (
+        <button type="button" disabled={busy} onClick={() => void handleResend()}>
+          Resend verification email
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Links for attaching another OAuth provider to the signed-in account, via
  * `/oauth/:provider/start?linkToken=<session token>` - @maker/accounts
  * validates the session server-side and links the resulting identity to that
@@ -202,6 +255,7 @@ export function AuthPanel() {
         <button type="button" onClick={handleLogout}>
           Log out
         </button>
+        {!user.emailVerified && <VerifyEmailHint key={`verify-${user.id}`} />}
         <SetPasswordForm key={user.id} initiallyHasPassword={user.hasPassword} />
         {token && <ConnectProviderLinks token={token} />}
       </div>

@@ -16,6 +16,7 @@ const MODERATOR_USER = {
   planTier: "free",
   role: "moderator",
   hasPassword: true,
+  emailVerified: true,
   createdAt: "2026-01-01T00:00:00Z",
 };
 
@@ -25,6 +26,7 @@ const REGULAR_USER = {
   planTier: "free",
   role: "user",
   hasPassword: true,
+  emailVerified: true,
   createdAt: "2026-01-01T00:00:00Z",
 };
 

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
@@ -334,6 +334,17 @@ describe("accounts server", () => {
       return decodeURIComponent(match[1]!);
     }
 
+    // Signup also fires a best-effort verification email through the same
+    // fake provider (see server.ts's sendVerificationEmailBestEffort), so
+    // these tests filter by subject rather than asserting on provider.sent's
+    // raw length - otherwise they'd depend on that fire-and-forget send's
+    // timing relative to the assertion.
+    function resetEmailsSentTo(provider: FakeMailProvider, to: string) {
+      return provider.sent.filter(
+        (email) => email.subject === "Reset your password" && email.to === to,
+      );
+    }
+
     beforeEach(async () => {
       for (const key of ENV_KEYS) originalEnv[key] = process.env[key];
       provider = await startFakeMailProvider();
@@ -361,9 +372,10 @@ describe("accounts server", () => {
         body: JSON.stringify({ email: "ada@example.com" }),
       });
       expect(requestResponse.status).toBe(202);
-      expect(provider.sent).toHaveLength(1);
-      const resetToken = extractToken(provider.sent[0]!.text);
-      expect(provider.sent[0]!.text).toContain("http://localhost:5173/#/reset-password");
+      const resetEmails = resetEmailsSentTo(provider, "ada@example.com");
+      expect(resetEmails).toHaveLength(1);
+      const resetToken = extractToken(resetEmails[0]!.text);
+      expect(resetEmails[0]!.text).toContain("http://localhost:5173/#/reset-password");
 
       const confirmResponse = await fetch(`${baseUrl}/password-reset/confirm`, {
         method: "POST",
@@ -403,7 +415,9 @@ describe("accounts server", () => {
 
       expect(knownRequest.status).toBe(unknownRequest.status);
       expect(await knownRequest.json()).toEqual(await unknownRequest.json());
-      expect(provider.sent).toHaveLength(1); // only the registered email actually got one
+      // Only the registered email actually got a reset email.
+      expect(resetEmailsSentTo(provider, "ada@example.com")).toHaveLength(1);
+      expect(resetEmailsSentTo(provider, "nobody@example.com")).toHaveLength(0);
     });
 
     it("rejects an invalid or expired token with 400", async () => {
@@ -422,7 +436,7 @@ describe("accounts server", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: "ada@example.com" }),
       });
-      const token = extractToken(provider.sent[0]!.text);
+      const token = extractToken(resetEmailsSentTo(provider, "ada@example.com")[0]!.text);
 
       const response = await fetch(`${baseUrl}/password-reset/confirm`, {
         method: "POST",
@@ -430,6 +444,99 @@ describe("accounts server", () => {
         body: JSON.stringify({ token, password: "short" }),
       });
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe("POST /verify-email and POST /me/resend-verification", () => {
+    const ENV_KEYS = ["MAIL_API_KEY", "MAIL_FROM_ADDRESS", "MAIL_API_URL", "WEB_APP_URL"] as const;
+    let provider: FakeMailProvider;
+    const originalEnv: Record<string, string | undefined> = {};
+
+    function extractToken(emailText: string): string {
+      const match = emailText.match(/token=(\S+)/);
+      if (!match) throw new Error(`No token found in email text: ${emailText}`);
+      return decodeURIComponent(match[1]!);
+    }
+
+    function verificationEmailsSentTo(to: string) {
+      return provider.sent.filter(
+        (email) => email.subject === "Verify your email" && email.to === to,
+      );
+    }
+
+    beforeEach(async () => {
+      for (const key of ENV_KEYS) originalEnv[key] = process.env[key];
+      provider = await startFakeMailProvider();
+      process.env.MAIL_API_KEY = "fake-mail-api-key";
+      process.env.MAIL_FROM_ADDRESS = "accounts@example.com";
+      process.env.MAIL_API_URL = provider.baseUrl;
+      process.env.WEB_APP_URL = "http://localhost:5173";
+    });
+
+    afterEach(async () => {
+      await provider.close();
+      for (const key of ENV_KEYS) {
+        if (originalEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = originalEnv[key];
+      }
+    });
+
+    it("sends a verification email on signup and confirms it via the token", async () => {
+      const signupResponse = await signup("ada@example.com", "hunter22222");
+      const signupBody = await signupResponse.json();
+      expect(signupBody.user.emailVerified).toBe(false);
+
+      // The best-effort send on signup is fire-and-forget - wait for it to land.
+      await vi.waitFor(() => expect(verificationEmailsSentTo("ada@example.com")).toHaveLength(1));
+      const token = extractToken(verificationEmailsSentTo("ada@example.com")[0]!.text);
+
+      const confirmResponse = await fetch(`${baseUrl}/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      expect(confirmResponse.status).toBe(200);
+      const confirmBody = await confirmResponse.json();
+      expect(confirmBody.user.id).toBe(signupBody.user.id);
+      expect(confirmBody.user.emailVerified).toBe(true);
+    });
+
+    it("rejects an invalid or expired token with 400", async () => {
+      const response = await fetch(`${baseUrl}/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "not-a-real-token" }),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("resends a verification email for the signed-in caller", async () => {
+      const signupResponse = await signup("ada@example.com", "hunter22222");
+      const { token: sessionToken } = await signupResponse.json();
+      await vi.waitFor(() => expect(verificationEmailsSentTo("ada@example.com")).toHaveLength(1));
+
+      const response = await fetch(`${baseUrl}/me/resend-verification`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      expect(response.status).toBe(202);
+      await vi.waitFor(() => expect(verificationEmailsSentTo("ada@example.com")).toHaveLength(2));
+    });
+
+    it("rejects resending for an already-verified account with 409", async () => {
+      const oauthUser = await createOAuthOnlyUser(pool, "oauth-only@example.com");
+      const session = await createSession(pool, oauthUser.id);
+
+      const response = await fetch(`${baseUrl}/me/resend-verification`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      expect(response.status).toBe(409);
+    });
+
+    it("rejects a resend request with no bearer token with 401", async () => {
+      const response = await fetch(`${baseUrl}/me/resend-verification`, { method: "POST" });
+      expect(response.status).toBe(401);
     });
   });
 
