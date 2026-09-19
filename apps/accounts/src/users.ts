@@ -6,6 +6,8 @@ export interface User {
   email: string;
   planTier: string;
   role: string;
+  /** Whether this account has a password set - false for an OAuth-only account that hasn't set one yet. */
+  hasPassword: boolean;
   createdAt: Date;
 }
 
@@ -24,6 +26,7 @@ function toUser(row: UserRow): User {
     email: row.email,
     planTier: row.plan_tier,
     role: row.role,
+    hasPassword: row.password_hash !== null,
     createdAt: row.created_at,
   };
 }
@@ -41,6 +44,9 @@ const VALID_ROLES = new Set(["user", "moderator"]);
 
 /** Thrown for a caller-supplied role that isn't one of the roles this service recognizes. */
 export class InvalidRoleError extends Error {}
+
+/** Thrown by `setPasswordForOAuthOnlyUser` when the target account already has a password. */
+export class PasswordAlreadySetError extends Error {}
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -134,6 +140,32 @@ export async function setUserRole(pool: Pool, id: string, role: string): Promise
     [role, id],
   );
   return rows[0] ? toUser(rows[0]) : undefined;
+}
+
+/**
+ * Sets a password for `id`'s account, returning the updated user, or
+ * `undefined` if no user has that id. Only works on an OAuth-only account
+ * (`password_hash IS NULL`) - throws `PasswordAlreadySetError` if the
+ * account already has one, since changing an existing password (which
+ * would need the current password verified first) is a different, larger
+ * feature (see "Password reset" in the README) than this one covers.
+ */
+export async function setPasswordForOAuthOnlyUser(
+  pool: Pool,
+  id: string,
+  password: string,
+): Promise<User | undefined> {
+  validatePassword(password);
+  const passwordHash = await hashPassword(password);
+  const { rows } = await pool.query<UserRow>(
+    "UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash IS NULL RETURNING *",
+    [passwordHash, id],
+  );
+  if (rows[0]) return toUser(rows[0]);
+
+  const existing = await findUserById(pool, id);
+  if (!existing) return undefined;
+  throw new PasswordAlreadySetError(`User (${id}) already has a password set`);
 }
 
 /** Verifies email+password and returns the matching user, or `undefined` if either is wrong. */

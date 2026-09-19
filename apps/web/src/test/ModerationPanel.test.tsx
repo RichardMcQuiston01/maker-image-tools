@@ -15,6 +15,7 @@ const MODERATOR_USER = {
   email: "ada@example.com",
   planTier: "free",
   role: "moderator",
+  hasPassword: true,
   createdAt: "2026-01-01T00:00:00Z",
 };
 
@@ -23,6 +24,7 @@ const REGULAR_USER = {
   email: "grace@example.com",
   planTier: "free",
   role: "user",
+  hasPassword: true,
   createdAt: "2026-01-01T00:00:00Z",
 };
 

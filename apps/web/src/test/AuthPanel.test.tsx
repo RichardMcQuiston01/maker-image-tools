@@ -46,6 +46,7 @@ describe("AuthPanel", () => {
           id: "u1",
           email: "ada@example.com",
           planTier: "free",
+          hasPassword: true,
           createdAt: "2026-01-01T00:00:00Z",
         },
         token: "test-token",
@@ -104,6 +105,7 @@ describe("AuthPanel", () => {
           id: "u2",
           email: "grace@example.com",
           planTier: "free",
+          hasPassword: true,
           createdAt: "2026-01-01T00:00:00Z",
         },
         token: "signup-token",
@@ -139,6 +141,7 @@ describe("AuthPanel", () => {
           id: "u1",
           email: "ada@example.com",
           planTier: "free",
+          hasPassword: true,
           createdAt: "2026-01-01T00:00:00Z",
         },
       }),
@@ -175,5 +178,102 @@ describe("AuthPanel", () => {
 
     expect(await screen.findByPlaceholderText("Email")).toBeInTheDocument();
     expect(window.localStorage.getItem("maker.accounts.token")).toBeNull();
+  });
+
+  describe("Set a password (OAuth-only accounts)", () => {
+    const OAUTH_ONLY_USER = {
+      id: "u3",
+      email: "oauth-only@example.com",
+      planTier: "free",
+      hasPassword: false,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+
+    function signInAsOAuthOnly(fetchMock: ReturnType<typeof vi.mocked<typeof fetch>>) {
+      window.localStorage.setItem("maker.accounts.token", "oauth-only-token");
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: OAUTH_ONLY_USER }));
+    }
+
+    it("shows the set-password form for a signed-in OAuth-only user", async () => {
+      const fetchMock = vi.mocked(fetch);
+      signInAsOAuthOnly(fetchMock);
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      expect(await screen.findByPlaceholderText("New password")).toBeInTheDocument();
+    });
+
+    it("does not show the set-password form for a user who already has one", async () => {
+      const fetchMock = vi.mocked(fetch);
+      window.localStorage.setItem("maker.accounts.token", "test-token");
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          user: { ...OAUTH_ONLY_USER, hasPassword: true },
+        }),
+      );
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      expect(await screen.findByText("oauth-only@example.com")).toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("New password")).not.toBeInTheDocument();
+    });
+
+    it("sets a password and refreshes the shared user state", async () => {
+      const fetchMock = vi.mocked(fetch);
+      signInAsOAuthOnly(fetchMock);
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: { ...OAUTH_ONLY_USER } }));
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, { user: { ...OAUTH_ONLY_USER, hasPassword: true } }),
+      );
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.change(await screen.findByPlaceholderText("New password"), {
+        target: { value: "hunter22222" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+      expect(await screen.findByText(/Password set/)).toBeInTheDocument();
+
+      const setCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/me/password"));
+      expect(setCall).toBeDefined();
+      const [, init] = setCall!;
+      expect(init?.method).toBe("POST");
+      expect((init?.headers as Record<string, string>).Authorization).toBe(
+        "Bearer oauth-only-token",
+      );
+      expect(JSON.parse(String(init?.body))).toEqual({ password: "hunter22222" });
+    });
+
+    it("shows an error when setting the password fails", async () => {
+      const fetchMock = vi.mocked(fetch);
+      signInAsOAuthOnly(fetchMock);
+      fetchMock.mockResolvedValueOnce(jsonResponse(409, { error: "already has a password" }));
+
+      render(
+        <AuthProvider>
+          <AuthPanel />
+        </AuthProvider>,
+      );
+
+      fireEvent.change(await screen.findByPlaceholderText("New password"), {
+        target: { value: "hunter22222" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+      expect(await screen.findByText(/Setting a password failed with 409/)).toBeInTheDocument();
+    });
   });
 });

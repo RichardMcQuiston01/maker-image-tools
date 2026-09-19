@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   planTier: string;
   role: string;
+  hasPassword: boolean;
   createdAt: string;
 }
 
@@ -22,6 +23,8 @@ export interface UseAuthResult {
   logout: () => Promise<void>;
   /** Adopts a session token @maker/accounts' OAuth callback handed back in the URL. */
   completeOAuthLogin: (token: string) => Promise<void>;
+  /** Re-fetches `/me` and updates `user` - for a caller that just changed something about the signed-in user server-side (e.g. setting a password) and needs the shared state to reflect it. No-op when signed out. */
+  refreshUser: () => Promise<void>;
 }
 
 const TOKEN_STORAGE_KEY = "maker.accounts.token";
@@ -175,6 +178,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${ACCOUNTS_URL}/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+      const body = (await response.json()) as { user: AuthUser };
+      setUser(body.user);
+    } catch {
+      // best-effort; the caller's own success/error handling already covers the action that prompted this
+    }
+  }, [token]);
+
   const logout = useCallback(async () => {
     if (token) {
       try {
@@ -194,7 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, token, error, signup, login, logout, completeOAuthLogin }}
+      value={{ status, user, token, error, signup, login, logout, completeOAuthLogin, refreshUser }}
     >
       {children}
     </AuthContext.Provider>
