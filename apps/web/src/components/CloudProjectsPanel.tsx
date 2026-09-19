@@ -20,7 +20,7 @@ export function CloudProjectsPanel({
   document: vectorDocument,
   onLoadDocument,
 }: CloudProjectsPanelProps) {
-  const { status: authStatus, user } = useAuth();
+  const { status: authStatus, user, token } = useAuth();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,9 +32,11 @@ export function CloudProjectsPanel({
   const [publishTags, setPublishTags] = useState("");
   const [publishStatus, setPublishStatus] = useState<"idle" | "submitting" | "submitted">("idle");
 
-  const refreshProjects = useCallback(async (userId: string) => {
+  const refreshProjects = useCallback(async (sessionToken: string) => {
     try {
-      const response = await fetch(`${CLOUD_PROJECTS_URL}/projects?userId=${userId}`);
+      const response = await fetch(`${CLOUD_PROJECTS_URL}/projects`, {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
       if (!response.ok) {
         throw new Error(`Cloud projects service responded with ${response.status}`);
       }
@@ -50,28 +52,28 @@ export function CloudProjectsPanel({
   }, []);
 
   useEffect(() => {
-    if (authStatus === "signed-in" && user) {
-      void refreshProjects(user.id);
+    if (authStatus === "signed-in" && token) {
+      void refreshProjects(token);
     } else {
       setProjects([]);
     }
-  }, [authStatus, user, refreshProjects]);
+  }, [authStatus, token, refreshProjects]);
 
   const handleSave = useCallback(async () => {
-    if (!user || !name.trim()) return;
+    if (!token || !name.trim()) return;
     try {
       setBusy(true);
       setError(null);
       const response = await fetch(`${CLOUD_PROJECTS_URL}/projects`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, name: name.trim(), data: vectorDocument }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: name.trim(), data: vectorDocument }),
       });
       if (!response.ok) {
         throw new Error(`Save failed with ${response.status}`);
       }
       setName("");
-      await refreshProjects(user.id);
+      await refreshProjects(token);
     } catch (err) {
       setError(
         err instanceof Error
@@ -81,15 +83,17 @@ export function CloudProjectsPanel({
     } finally {
       setBusy(false);
     }
-  }, [user, name, vectorDocument, refreshProjects]);
+  }, [token, name, vectorDocument, refreshProjects]);
 
   const handleLoad = useCallback(
     async (id: string) => {
-      if (!user) return;
+      if (!token) return;
       try {
         setBusy(true);
         setError(null);
-        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}?userId=${user.id}`);
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!response.ok) {
           throw new Error(`Load failed with ${response.status}`);
         }
@@ -105,22 +109,23 @@ export function CloudProjectsPanel({
         setBusy(false);
       }
     },
-    [user, onLoadDocument],
+    [token, onLoadDocument],
   );
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!user) return;
+      if (!token) return;
       try {
         setBusy(true);
         setError(null);
-        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}?userId=${user.id}`, {
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}`, {
           method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok && response.status !== 204) {
           throw new Error(`Delete failed with ${response.status}`);
         }
-        await refreshProjects(user.id);
+        await refreshProjects(token);
       } catch (err) {
         setError(
           err instanceof Error
@@ -131,25 +136,24 @@ export function CloudProjectsPanel({
         setBusy(false);
       }
     },
-    [user, refreshProjects],
+    [token, refreshProjects],
   );
 
   const handleShare = useCallback(
     async (id: string) => {
-      if (!user) return;
+      if (!token) return;
       try {
         setBusy(true);
         setError(null);
         const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}/share`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id }),
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) {
           throw new Error(`Share failed with ${response.status}`);
         }
-        const { token } = (await response.json()) as { token: string };
-        setShareInfo({ projectId: id, token });
+        const { token: shareToken } = (await response.json()) as { token: string };
+        setShareInfo({ projectId: id, token: shareToken });
       } catch (err) {
         setError(
           err instanceof Error
@@ -160,19 +164,18 @@ export function CloudProjectsPanel({
         setBusy(false);
       }
     },
-    [user],
+    [token],
   );
 
   const handleRevokeShare = useCallback(
     async (id: string) => {
-      if (!user) return;
+      if (!token) return;
       try {
         setBusy(true);
         setError(null);
         const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}/share`, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id }),
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok && response.status !== 204) {
           throw new Error(`Revoke failed with ${response.status}`);
@@ -188,7 +191,7 @@ export function CloudProjectsPanel({
         setBusy(false);
       }
     },
-    [user],
+    [token],
   );
 
   const handleOpenPublish = useCallback((project: ProjectSummary) => {
@@ -201,13 +204,13 @@ export function CloudProjectsPanel({
 
   const handlePublish = useCallback(
     async (id: string) => {
-      if (!user || !publishTitle.trim()) return;
+      if (!user || !token || !publishTitle.trim()) return;
       try {
         setPublishStatus("submitting");
         setError(null);
-        const projectResponse = await fetch(
-          `${CLOUD_PROJECTS_URL}/projects/${id}?userId=${user.id}`,
-        );
+        const projectResponse = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!projectResponse.ok) {
           throw new Error(`Load failed with ${projectResponse.status}`);
         }
@@ -240,7 +243,7 @@ export function CloudProjectsPanel({
         );
       }
     },
-    [user, publishTitle, publishDescription, publishTags],
+    [user, token, publishTitle, publishDescription, publishTags],
   );
 
   if (authStatus !== "signed-in") {

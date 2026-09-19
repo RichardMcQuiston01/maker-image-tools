@@ -1,19 +1,24 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import type { Pool } from "pg";
 import { createServer } from "../src/server.js";
 import type { ObjectStore } from "../src/objectStorage.js";
 import { createFakeObjectStore } from "./fakeS3.js";
+import { startFakeAccounts, type FakeAccounts } from "./fakeAccounts.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 const USER_1 = "11111111-1111-1111-1111-111111111111";
 const USER_2 = "22222222-2222-2222-2222-222222222222";
+const TOKEN_1 = "user-1-token";
+const TOKEN_2 = "user-2-token";
 
 describe("cloud-projects server", () => {
   let pool: Pool;
   let store: ObjectStore;
   let server: Server;
   let baseUrl: string;
+  let accounts: FakeAccounts;
+  const originalAccountsUrl = process.env.ACCOUNTS_URL;
 
   beforeAll(async () => {
     pool = requireTestPool();
@@ -35,18 +40,30 @@ describe("cloud-projects server", () => {
 
   beforeEach(async () => {
     await resetTestDb(pool);
+    accounts = await startFakeAccounts({ [TOKEN_1]: USER_1, [TOKEN_2]: USER_2 });
+    process.env.ACCOUNTS_URL = accounts.baseUrl;
   });
 
-  async function createProject(userId: string, name: string, data: unknown) {
+  afterEach(async () => {
+    await accounts.close();
+    if (originalAccountsUrl === undefined) delete process.env.ACCOUNTS_URL;
+    else process.env.ACCOUNTS_URL = originalAccountsUrl;
+  });
+
+  function authHeaders(token: string): Record<string, string> {
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  }
+
+  async function createProject(token: string, name: string, data: unknown) {
     return fetch(`${baseUrl}/projects`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name, data }),
+      headers: authHeaders(token),
+      body: JSON.stringify({ name, data }),
     });
   }
 
   it("creates a project and returns 201", async () => {
-    const response = await createProject(USER_1, "My Design", { layers: [] });
+    const response = await createProject(TOKEN_1, "My Design", { layers: [] });
     expect(response.status).toBe(201);
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     const body = await response.json();
@@ -55,46 +72,57 @@ describe("cloud-projects server", () => {
   });
 
   it("lists only the requesting user's projects", async () => {
-    await createProject(USER_1, "Mine", { v: 1 });
-    await createProject(USER_2, "Theirs", { v: 2 });
+    await createProject(TOKEN_1, "Mine", { v: 1 });
+    await createProject(TOKEN_2, "Theirs", { v: 2 });
 
-    const response = await fetch(`${baseUrl}/projects?userId=${USER_1}`);
+    const response = await fetch(`${baseUrl}/projects`, { headers: authHeaders(TOKEN_1) });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.projects).toHaveLength(1);
     expect(body.projects[0].name).toBe("Mine");
   });
 
-  it("requires a userId query parameter to list projects", async () => {
+  it("rejects a request with no bearer token with 401", async () => {
     const response = await fetch(`${baseUrl}/projects`);
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a request with an invalid bearer token with 401", async () => {
+    const response = await fetch(`${baseUrl}/projects`, {
+      headers: { Authorization: "Bearer not-a-real-token" },
+    });
+    expect(response.status).toBe(401);
   });
 
   it("fetches a single project by id, scoped to its owner", async () => {
-    const created = await (await createProject(USER_1, "Mine", { v: 1 })).json();
+    const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
 
-    const ok = await fetch(`${baseUrl}/projects/${created.project.id}?userId=${USER_1}`);
+    const ok = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      headers: authHeaders(TOKEN_1),
+    });
     expect(ok.status).toBe(200);
     expect((await ok.json()).project.data).toEqual({ v: 1 });
 
-    const wrongUser = await fetch(`${baseUrl}/projects/${created.project.id}?userId=${USER_2}`);
+    const wrongUser = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      headers: authHeaders(TOKEN_2),
+    });
     expect(wrongUser.status).toBe(404);
   });
 
   it("returns 404 for an unknown project id", async () => {
-    const response = await fetch(
-      `${baseUrl}/projects/00000000-0000-0000-0000-000000000000?userId=${USER_1}`,
-    );
+    const response = await fetch(`${baseUrl}/projects/00000000-0000-0000-0000-000000000000`, {
+      headers: authHeaders(TOKEN_1),
+    });
     expect(response.status).toBe(404);
   });
 
   it("updates a project's name and data via PUT", async () => {
-    const created = await (await createProject(USER_1, "Original", { v: 1 })).json();
+    const created = await (await createProject(TOKEN_1, "Original", { v: 1 })).json();
 
     const response = await fetch(`${baseUrl}/projects/${created.project.id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: USER_1, name: "Renamed", data: { v: 2 } }),
+      headers: authHeaders(TOKEN_1),
+      body: JSON.stringify({ name: "Renamed", data: { v: 2 } }),
     });
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -102,26 +130,53 @@ describe("cloud-projects server", () => {
     expect(body.project.data).toEqual({ v: 2 });
   });
 
-  it("deletes a project via DELETE", async () => {
-    const created = await (await createProject(USER_1, "Doomed", { v: 1 })).json();
+  it("rejects updating another user's project with 404", async () => {
+    const created = await (await createProject(TOKEN_1, "Original", { v: 1 })).json();
 
-    const deleteResponse = await fetch(
-      `${baseUrl}/projects/${created.project.id}?userId=${USER_1}`,
-      { method: "DELETE" },
-    );
+    const response = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      method: "PUT",
+      headers: authHeaders(TOKEN_2),
+      body: JSON.stringify({ name: "Hijacked" }),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("deletes a project via DELETE", async () => {
+    const created = await (await createProject(TOKEN_1, "Doomed", { v: 1 })).json();
+
+    const deleteResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      method: "DELETE",
+      headers: authHeaders(TOKEN_1),
+    });
     expect(deleteResponse.status).toBe(204);
 
-    const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}?userId=${USER_1}`);
+    const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      headers: authHeaders(TOKEN_1),
+    });
     expect(getResponse.status).toBe(404);
   });
 
+  it("rejects deleting another user's project with 404, leaving it intact", async () => {
+    const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+
+    const deleteResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      method: "DELETE",
+      headers: authHeaders(TOKEN_2),
+    });
+    expect(deleteResponse.status).toBe(404);
+
+    const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      headers: authHeaders(TOKEN_1),
+    });
+    expect(getResponse.status).toBe(200);
+  });
+
   it("creates a share link and serves the project publicly through it", async () => {
-    const created = await (await createProject(USER_1, "Shared", { v: 1 })).json();
+    const created = await (await createProject(TOKEN_1, "Shared", { v: 1 })).json();
 
     const shareResponse = await fetch(`${baseUrl}/projects/${created.project.id}/share`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: USER_1 }),
+      headers: authHeaders(TOKEN_1),
     });
     expect(shareResponse.status).toBe(200);
     const { token } = await shareResponse.json();
@@ -132,8 +187,7 @@ describe("cloud-projects server", () => {
 
     const revokeResponse = await fetch(`${baseUrl}/projects/${created.project.id}/share`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: USER_1 }),
+      headers: authHeaders(TOKEN_1),
     });
     expect(revokeResponse.status).toBe(204);
 
@@ -141,10 +195,20 @@ describe("cloud-projects server", () => {
     expect(afterRevoke.status).toBe(404);
   });
 
+  it("rejects creating a share link for another user's project with 404", async () => {
+    const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+
+    const shareResponse = await fetch(`${baseUrl}/projects/${created.project.id}/share`, {
+      method: "POST",
+      headers: authHeaders(TOKEN_2),
+    });
+    expect(shareResponse.status).toBe(404);
+  });
+
   it("rejects a request body that isn't valid JSON with 400", async () => {
     const response = await fetch(`${baseUrl}/projects`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(TOKEN_1),
       body: "not json",
     });
     expect(response.status).toBe(400);

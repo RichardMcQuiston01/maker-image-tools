@@ -4,6 +4,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { Pool } from "pg";
+import { AccountsConfigError, SessionVerificationError, verifySession } from "./accountsAuth.js";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import {
@@ -80,16 +81,44 @@ function optionalString(body: Record<string, unknown>, field: string): string | 
   return value;
 }
 
-function requireQueryParam(url: URL, field: string): string {
-  const value = url.searchParams.get(field);
-  if (!value) {
-    throw new Error(`"${field}" query parameter is required`);
+function bearerToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return undefined;
+  const token = header.slice("Bearer ".length).trim();
+  return token.length > 0 ? token : undefined;
+}
+
+/**
+ * Resolves the authenticated caller's user id via @maker/accounts, or
+ * writes the appropriate 401 response and returns `undefined` - this is
+ * what replaced trusting a client-supplied `userId` body/query param
+ * everywhere below (see README's former "Access control" gap).
+ */
+async function requireAuthenticatedUserId(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<string | undefined> {
+  const token = bearerToken(req);
+  if (!token) {
+    sendJson(res, 401, { error: "Missing bearer token" });
+    return undefined;
   }
-  return value;
+  const userId = await verifySession(token);
+  if (!userId) {
+    sendJson(res, 401, { error: "Invalid or expired session" });
+    return undefined;
+  }
+  return userId;
 }
 
 function errorStatus(err: unknown): number {
-  if (err instanceof DatabaseConfigError || err instanceof ObjectStorageConfigError) return 500;
+  if (
+    err instanceof DatabaseConfigError ||
+    err instanceof ObjectStorageConfigError ||
+    err instanceof AccountsConfigError ||
+    err instanceof SessionVerificationError
+  )
+    return 500;
   if (err instanceof InvalidProjectInputError) return 400;
   if (err instanceof ProjectNotFoundError) return 404;
   const message = err instanceof Error ? err.message : "";
@@ -127,11 +156,13 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
     migrationsReady
       .then(async () => {
         if (req.method === "POST" && pathname === "/projects") {
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
           const body = await parseJsonBody(req);
           const project = await createProject(
             pool,
             store,
-            requireString(body, "userId"),
+            userId,
             requireString(body, "name"),
             body.data,
           );
@@ -140,7 +171,8 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
         }
 
         if (req.method === "GET" && pathname === "/projects") {
-          const userId = requireQueryParam(url, "userId");
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
           const projects = await listProjects(pool, userId);
           sendJson(res, 200, { projects });
           return;
@@ -149,14 +181,14 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
         const shareMatch = pathname.match(SHARE_RE);
         if (shareMatch && (req.method === "POST" || req.method === "DELETE")) {
           const projectId = shareMatch[1]!;
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
           if (req.method === "POST") {
-            const body = await parseJsonBody(req);
-            const token = await createShareLink(pool, requireString(body, "userId"), projectId);
+            const token = await createShareLink(pool, userId, projectId);
             sendJson(res, 200, { token });
             return;
           }
-          const body = await parseJsonBody(req);
-          await revokeShareLink(pool, requireString(body, "userId"), projectId);
+          await revokeShareLink(pool, userId, projectId);
           res.writeHead(204);
           res.end();
           return;
@@ -174,30 +206,28 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
           const projectId = projectMatch[1]!;
 
           if (req.method === "GET") {
-            const userId = requireQueryParam(url, "userId");
+            const userId = await requireAuthenticatedUserId(req, res);
+            if (!userId) return;
             const project = await getProject(pool, store, userId, projectId);
             sendJson(res, 200, { project });
             return;
           }
 
           if (req.method === "PUT") {
+            const userId = await requireAuthenticatedUserId(req, res);
+            if (!userId) return;
             const body = await parseJsonBody(req);
-            const project = await updateProject(
-              pool,
-              store,
-              requireString(body, "userId"),
-              projectId,
-              {
-                name: optionalString(body, "name"),
-                data: body.data,
-              },
-            );
+            const project = await updateProject(pool, store, userId, projectId, {
+              name: optionalString(body, "name"),
+              data: body.data,
+            });
             sendJson(res, 200, { project });
             return;
           }
 
           if (req.method === "DELETE") {
-            const userId = requireQueryParam(url, "userId");
+            const userId = await requireAuthenticatedUserId(req, res);
+            if (!userId) return;
             await deleteProject(pool, store, userId, projectId);
             res.writeHead(204);
             res.end();
