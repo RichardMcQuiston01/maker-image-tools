@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { ACCOUNTS_URL } from "../lib/accountsUrl";
 import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
 import { MATERIAL_DB_URL } from "../lib/materialDbUrl";
 
@@ -22,7 +23,7 @@ interface PendingPreset {
 }
 
 export function ModerationPanel() {
-  const { status: authStatus, user } = useAuth();
+  const { status: authStatus, user, token } = useAuth();
   const isModerator = authStatus === "signed-in" && user?.role === "moderator";
 
   const [listings, setListings] = useState<PendingListing[]>([]);
@@ -30,6 +31,11 @@ export function ModerationPanel() {
   const [presets, setPresets] = useState<PendingPreset[]>([]);
   const [presetsError, setPresetsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const [targetUserId, setTargetUserId] = useState("");
+  const [roleActionBusy, setRoleActionBusy] = useState(false);
+  const [roleActionError, setRoleActionError] = useState<string | null>(null);
+  const [roleActionResult, setRoleActionResult] = useState<string | null>(null);
 
   const refreshListings = useCallback(async () => {
     try {
@@ -133,6 +139,36 @@ export function ModerationPanel() {
     [user],
   );
 
+  const handleSetRole = useCallback(
+    async (role: "moderator" | "user") => {
+      if (!token || !targetUserId.trim()) return;
+      try {
+        setRoleActionBusy(true);
+        setRoleActionError(null);
+        setRoleActionResult(null);
+        const response = await fetch(`${ACCOUNTS_URL}/users/${targetUserId.trim()}/role`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ role }),
+        });
+        if (!response.ok) {
+          throw new Error(`Role update failed with ${response.status}`);
+        }
+        const body = (await response.json()) as { user: { id: string; role: string } };
+        setRoleActionResult(`${body.user.id} is now "${body.user.role}".`);
+      } catch (err) {
+        setRoleActionError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/accounts dev server running?)`
+            : "Failed to update role",
+        );
+      } finally {
+        setRoleActionBusy(false);
+      }
+    },
+    [token, targetUserId],
+  );
+
   if (!isModerator) {
     return (
       <section className="ai-panel">
@@ -146,6 +182,39 @@ export function ModerationPanel() {
     <section className="ai-panel">
       <h2>Moderation Queue</h2>
       <p className="ai-panel__hint">Submissions awaiting approval, oldest first.</p>
+
+      <h3>Moderator Access</h3>
+      <p className="ai-panel__hint">
+        Grant or revoke moderator access for another user by their account id.
+      </p>
+      {roleActionError && (
+        <p role="alert" className="ai-panel__error">
+          {roleActionError}
+        </p>
+      )}
+      {roleActionResult && <p className="ai-panel__result">{roleActionResult}</p>}
+      <input
+        type="text"
+        placeholder="User ID"
+        value={targetUserId}
+        onChange={(event) => setTargetUserId(event.target.value)}
+      />
+      <div className="ai-panel__actions">
+        <button
+          type="button"
+          disabled={roleActionBusy || !targetUserId.trim()}
+          onClick={() => void handleSetRole("moderator")}
+        >
+          Grant moderator
+        </button>
+        <button
+          type="button"
+          disabled={roleActionBusy || !targetUserId.trim()}
+          onClick={() => void handleSetRole("user")}
+        >
+          Revoke moderator
+        </button>
+      </div>
 
       <h3>Community Library</h3>
       {listingsError && (
