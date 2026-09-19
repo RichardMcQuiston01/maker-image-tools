@@ -14,6 +14,8 @@ export type AuthStatus = "loading" | "signed-out" | "signed-in" | "working";
 export interface UseAuthResult {
   status: AuthStatus;
   user: AuthUser | null;
+  /** The current session's bearer token, for callers that need to hit @maker/accounts directly (e.g. role-management). Null when signed out. */
+  token: string | null;
   error: string | null;
   signup: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
@@ -192,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, error, signup, login, logout, completeOAuthLogin }}
+      value={{ status, user, token, error, signup, login, logout, completeOAuthLogin }}
     >
       {children}
     </AuthContext.Provider>

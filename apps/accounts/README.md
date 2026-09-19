@@ -96,10 +96,11 @@ Every user has a `role`: `user` (default) or `moderator`. There are two ways to 
   promote-only: removing an email from the list doesn't revoke a role already granted.
 - `POST /users/:id/role` lets any already-authenticated moderator promote or demote any other user
   by id — the first moderator still has to come from `MODERATOR_EMAILS`, but every moderator after
-  that can be granted (or revoked) through this API instead of a direct DB update. There's
-  deliberately no floor stopping a moderator from demoting themselves or every other moderator;
-  `apps/web` doesn't expose a UI for this yet (it's API-only for now), so that's a self-inflicted
-  API-caller mistake, not something worth defending against server-side.
+  that can be granted (or revoked) through this API instead of a direct DB update. `apps/web`'s
+  `ModerationPanel` exposes this as a small "Moderator Access" form (enter a user id, grant or
+  revoke) alongside the approve/reject queues. There's deliberately no floor stopping a moderator
+  from demoting themselves or every other moderator — that's a self-inflicted mistake, not
+  something worth defending against server-side.
 
 As with everything else in this service, callers are expected to enforce anything role-gated
 themselves by checking the `role` on the authenticated user — this service doesn't expose a
@@ -139,8 +140,6 @@ deployment enabling this needs to register a real OAuth app (redirect URI
 ## What's not here yet
 
 - **Password reset / email verification** — not yet implemented.
-- **A role-management UI** — `POST /users/:id/role` exists, but `apps/web` has no admin screen
-  that calls it yet; granting/revoking moderator access today means calling the API directly.
 - **Adding a password to an OAuth-only account, or linking a second OAuth provider from a signed-in
   session** — both are only possible today by signing in with an email that matches an existing
   account, which links automatically; there's no explicit "connect another provider" action.

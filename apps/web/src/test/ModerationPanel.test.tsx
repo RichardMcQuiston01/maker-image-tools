@@ -238,4 +238,78 @@ describe("ModerationPanel", () => {
 
     expect(await screen.findAllByText(/Nothing pending review/)).toHaveLength(2);
   });
+
+  describe("Moderator Access", () => {
+    const TARGET_ID = "33333333-3333-3333-3333-333333333333";
+
+    function mockRoleFetches(
+      fetchMock: ReturnType<typeof vi.mocked<typeof fetch>>,
+      roleResponse: Response,
+    ) {
+      fetchMock.mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes("/me")) return jsonResponse(200, { user: MODERATOR_USER });
+        if (url.includes("/listings/pending")) return jsonResponse(200, { listings: [] });
+        if (url.includes("/presets/pending")) return jsonResponse(200, { presets: [] });
+        if (url.includes(`/users/${TARGET_ID}/role`)) return roleResponse;
+        throw new Error(`unexpected fetch in test: ${url}`);
+      });
+    }
+
+    it("grants moderator access to a target user id", async () => {
+      const fetchMock = vi.mocked(fetch);
+      mockRoleFetches(fetchMock, jsonResponse(200, { user: { id: TARGET_ID, role: "moderator" } }));
+      window.localStorage.setItem("maker.accounts.token", "test-token");
+
+      renderPanel();
+      fireEvent.change(await screen.findByPlaceholderText("User ID"), {
+        target: { value: TARGET_ID },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Grant moderator" }));
+
+      expect(
+        await screen.findByText(new RegExp(`${TARGET_ID} is now "moderator"`)),
+      ).toBeInTheDocument();
+      const roleCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).includes(`/users/${TARGET_ID}/role`),
+      );
+      expect(roleCall).toBeDefined();
+      const [, init] = roleCall!;
+      expect(init?.method).toBe("POST");
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+      expect(JSON.parse(String(init?.body))).toEqual({ role: "moderator" });
+    });
+
+    it("revokes moderator access from a target user id", async () => {
+      const fetchMock = vi.mocked(fetch);
+      mockRoleFetches(fetchMock, jsonResponse(200, { user: { id: TARGET_ID, role: "user" } }));
+      window.localStorage.setItem("maker.accounts.token", "test-token");
+
+      renderPanel();
+      fireEvent.change(await screen.findByPlaceholderText("User ID"), {
+        target: { value: TARGET_ID },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Revoke moderator" }));
+
+      expect(await screen.findByText(new RegExp(`${TARGET_ID} is now "user"`))).toBeInTheDocument();
+      const roleCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).includes(`/users/${TARGET_ID}/role`),
+      );
+      expect(JSON.parse(String(roleCall![1]?.body))).toEqual({ role: "user" });
+    });
+
+    it("shows an error when the target user id isn't found", async () => {
+      const fetchMock = vi.mocked(fetch);
+      mockRoleFetches(fetchMock, jsonResponse(404, { error: "Not found" }));
+      window.localStorage.setItem("maker.accounts.token", "test-token");
+
+      renderPanel();
+      fireEvent.change(await screen.findByPlaceholderText("User ID"), {
+        target: { value: TARGET_ID },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Grant moderator" }));
+
+      expect(await screen.findByText(/Role update failed with 404/)).toBeInTheDocument();
+    });
+  });
 });
