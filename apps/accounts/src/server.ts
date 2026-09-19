@@ -13,7 +13,12 @@ import {
   OAuthConfigError,
 } from "./oauth.js";
 import { findOrCreateUserForOAuthIdentity } from "./oauthIdentities.js";
-import { createSession, deleteSession, validateSession } from "./sessions.js";
+import {
+  createSession,
+  deleteExpiredSessions,
+  deleteSession,
+  validateSession,
+} from "./sessions.js";
 import {
   authenticate,
   createUser,
@@ -30,6 +35,7 @@ import type { Pool } from "pg";
 export class NotAModeratorError extends Error {}
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
+const SESSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 function setCorsHeaders(res: ServerResponse): void {
   // Wide open for local/dev use; a real deployment would restrict this to the app's own origin.
@@ -143,7 +149,16 @@ function errorStatus(err: unknown): number {
 export function createServer(pool: Pool = createPool()) {
   const migrationsReady = runMigrations(pool);
 
-  return createHttpServer((req, res) => {
+  const cleanupExpiredSessions = () => {
+    deleteExpiredSessions(pool).catch((err: unknown) => {
+      console.error("Failed to clean up expired sessions:", err);
+    });
+  };
+  const cleanupTimer = setInterval(cleanupExpiredSessions, SESSION_CLEANUP_INTERVAL_MS);
+  // Don't let this timer keep the process (or a test's event loop) alive.
+  cleanupTimer.unref();
+
+  const server = createHttpServer((req, res) => {
     setCorsHeaders(res);
 
     if (req.method === "OPTIONS") {
@@ -321,4 +336,7 @@ export function createServer(pool: Pool = createPool()) {
         sendJson(res, errorStatus(err), { error: message });
       });
   });
+
+  server.on("close", () => clearInterval(cleanupTimer));
+  return server;
 }

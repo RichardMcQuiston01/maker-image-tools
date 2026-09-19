@@ -49,3 +49,14 @@ export async function validateSession(pool: Pool, token: string): Promise<User |
 export async function deleteSession(pool: Pool, token: string): Promise<void> {
   await pool.query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
 }
+
+/**
+ * Deletes every session past its `expires_at`, returning how many rows were
+ * removed. An expired session already fails `validateSession`, so this is
+ * housekeeping (bounding the table's size) rather than a security fix -
+ * see server.ts's `createServer` for where this runs on a timer.
+ */
+export async function deleteExpiredSessions(pool: Pool): Promise<number> {
+  const { rowCount } = await pool.query("DELETE FROM sessions WHERE expires_at <= now()");
+  return rowCount ?? 0;
+}
