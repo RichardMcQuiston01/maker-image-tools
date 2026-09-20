@@ -5,13 +5,18 @@ import {
   createProject,
   createShareLink,
   deleteProject,
+  deleteThumbnail,
   getProject,
   getSharedProject,
+  getSharedThumbnail,
+  getThumbnail,
   InvalidProjectInputError,
   listProjects,
   ProjectNotFoundError,
   QuotaExceededError,
   revokeShareLink,
+  saveThumbnail,
+  ThumbnailNotFoundError,
   updateProject,
 } from "../src/projects.js";
 import { quotaForPlanTier } from "../src/quotas.js";
@@ -218,6 +223,96 @@ describe("projects", () => {
         TINY_QUOTA,
       );
       expect(updated.data).toEqual({ v: 10 });
+    });
+  });
+
+  describe("thumbnails", () => {
+    const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+    it("saves a thumbnail, marks the project as having one, and reads it back", async () => {
+      const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
+      expect(project.hasThumbnail).toBe(false);
+
+      await saveThumbnail(pool, store, USER_1, project.id, PNG_BYTES, "image/png");
+
+      const fetched = await getProject(pool, store, USER_1, project.id);
+      expect(fetched.hasThumbnail).toBe(true);
+
+      const thumbnail = await getThumbnail(pool, store, USER_1, project.id);
+      expect(thumbnail.contentType).toBe("image/png");
+      expect(thumbnail.body).toEqual(PNG_BYTES);
+    });
+
+    it("rejects a non-PNG content type", async () => {
+      const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
+      await expect(
+        saveThumbnail(pool, store, USER_1, project.id, PNG_BYTES, "image/jpeg"),
+      ).rejects.toThrow(InvalidProjectInputError);
+    });
+
+    it("rejects an empty thumbnail body", async () => {
+      const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
+      await expect(
+        saveThumbnail(pool, store, USER_1, project.id, Buffer.alloc(0), "image/png"),
+      ).rejects.toThrow(InvalidProjectInputError);
+    });
+
+    it("throws ThumbnailNotFoundError for a project with no thumbnail", async () => {
+      const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
+      await expect(getThumbnail(pool, store, USER_1, project.id)).rejects.toThrow(
+        ThumbnailNotFoundError,
+      );
+    });
+
+    it("throws ProjectNotFoundError saving/reading a thumbnail for another user's project", async () => {
+      const project = await createProject(pool, store, USER_1, "Private", { v: 1 }, FREE_QUOTA);
+      await expect(
+        saveThumbnail(pool, store, USER_2, project.id, PNG_BYTES, "image/png"),
+      ).rejects.toThrow(ProjectNotFoundError);
+      await expect(getThumbnail(pool, store, USER_2, project.id)).rejects.toThrow(
+        ProjectNotFoundError,
+      );
+    });
+
+    it("deletes a thumbnail, clearing hasThumbnail - idempotently, when there's none", async () => {
+      const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
+      await saveThumbnail(pool, store, USER_1, project.id, PNG_BYTES, "image/png");
+
+      await deleteThumbnail(pool, store, USER_1, project.id);
+      const fetched = await getProject(pool, store, USER_1, project.id);
+      expect(fetched.hasThumbnail).toBe(false);
+      await expect(getThumbnail(pool, store, USER_1, project.id)).rejects.toThrow(
+        ThumbnailNotFoundError,
+      );
+
+      await expect(deleteThumbnail(pool, store, USER_1, project.id)).resolves.toBeUndefined();
+    });
+
+    it("removes the thumbnail from storage when the project is deleted", async () => {
+      const project = await createProject(pool, store, USER_1, "Doomed", { v: 1 }, FREE_QUOTA);
+      await saveThumbnail(pool, store, USER_1, project.id, PNG_BYTES, "image/png");
+      await deleteProject(pool, store, USER_1, project.id);
+      await expect(getThumbnail(pool, store, USER_1, project.id)).rejects.toThrow(
+        ProjectNotFoundError,
+      );
+    });
+
+    it("serves a thumbnail by share token, and errors once revoked", async () => {
+      const project = await createProject(pool, store, USER_1, "Shared", { v: 1 }, FREE_QUOTA);
+      await saveThumbnail(pool, store, USER_1, project.id, PNG_BYTES, "image/png");
+      const token = await createShareLink(pool, USER_1, project.id);
+
+      const thumbnail = await getSharedThumbnail(pool, store, token);
+      expect(thumbnail.body).toEqual(PNG_BYTES);
+
+      await revokeShareLink(pool, USER_1, project.id);
+      await expect(getSharedThumbnail(pool, store, token)).rejects.toThrow(ProjectNotFoundError);
+    });
+
+    it("throws ThumbnailNotFoundError for a shared project with no thumbnail", async () => {
+      const project = await createProject(pool, store, USER_1, "Shared", { v: 1 }, FREE_QUOTA);
+      const token = await createShareLink(pool, USER_1, project.id);
+      await expect(getSharedThumbnail(pool, store, token)).rejects.toThrow(ThumbnailNotFoundError);
     });
   });
 });

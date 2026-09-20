@@ -3,8 +3,11 @@ import type { Pool } from "pg";
 import {
   deleteProjectData,
   getProjectData,
+  getProjectThumbnail,
   projectStorageKey,
+  projectThumbnailKey,
   putProjectData,
+  putProjectThumbnail,
   type ObjectStore,
 } from "./objectStorage.js";
 import type { PlanQuota } from "./quotas.js";
@@ -14,6 +17,7 @@ export interface ProjectSummary {
   name: string;
   createdAt: string;
   updatedAt: string;
+  hasThumbnail: boolean;
 }
 
 export interface Project extends ProjectSummary {
@@ -28,6 +32,7 @@ interface ProjectRow {
   created_at: Date;
   updated_at: Date;
   data_size_bytes: number;
+  has_thumbnail: boolean;
 }
 
 function toSummary(row: ProjectRow): ProjectSummary {
@@ -36,6 +41,7 @@ function toSummary(row: ProjectRow): ProjectSummary {
     name: row.name,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+    hasThumbnail: row.has_thumbnail,
   };
 }
 
@@ -47,6 +53,11 @@ export class InvalidProjectInputError extends Error {}
 
 /** Thrown when saving/updating a project would put the user over their plan's project count or storage limit. */
 export class QuotaExceededError extends Error {}
+
+/** Thrown when a project exists but has no thumbnail stored for it. */
+export class ThumbnailNotFoundError extends Error {}
+
+const THUMBNAIL_CONTENT_TYPE = "image/png";
 
 function validateName(name: string): void {
   if (name.trim().length === 0) {
@@ -200,6 +211,57 @@ export async function deleteProject(
   const row = await findOwnedProjectRow(pool, userId, projectId);
   await pool.query("DELETE FROM projects WHERE id = $1", [row.id]);
   await deleteProjectData(store, projectStorageKey(userId, row.id));
+  if (row.has_thumbnail) {
+    await deleteProjectData(store, projectThumbnailKey(userId, row.id));
+  }
+}
+
+/** Stores a thumbnail image for a project, overwriting any existing one. Only `image/png` is accepted, matching what apps/web's renderThumbnail produces. */
+export async function saveThumbnail(
+  pool: Pool,
+  store: ObjectStore,
+  userId: string,
+  projectId: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  if (contentType !== THUMBNAIL_CONTENT_TYPE) {
+    throw new InvalidProjectInputError(
+      `Thumbnail must be "${THUMBNAIL_CONTENT_TYPE}", got "${contentType}"`,
+    );
+  }
+  if (body.length === 0) {
+    throw new InvalidProjectInputError("Thumbnail body is empty");
+  }
+  const row = await findOwnedProjectRow(pool, userId, projectId);
+  await putProjectThumbnail(store, projectThumbnailKey(userId, row.id), body, contentType);
+  await pool.query("UPDATE projects SET has_thumbnail = true WHERE id = $1", [row.id]);
+}
+
+export async function getThumbnail(
+  pool: Pool,
+  store: ObjectStore,
+  userId: string,
+  projectId: string,
+): Promise<{ body: Buffer; contentType: string }> {
+  const row = await findOwnedProjectRow(pool, userId, projectId);
+  if (!row.has_thumbnail) {
+    throw new ThumbnailNotFoundError(`No thumbnail for project "${projectId}"`);
+  }
+  return getProjectThumbnail(store, projectThumbnailKey(userId, row.id));
+}
+
+/** Removes a project's thumbnail if it has one - a no-op otherwise, matching revokeShareLink's idempotence. */
+export async function deleteThumbnail(
+  pool: Pool,
+  store: ObjectStore,
+  userId: string,
+  projectId: string,
+): Promise<void> {
+  const row = await findOwnedProjectRow(pool, userId, projectId);
+  if (!row.has_thumbnail) return;
+  await deleteProjectData(store, projectThumbnailKey(userId, row.id));
+  await pool.query("UPDATE projects SET has_thumbnail = false WHERE id = $1", [row.id]);
 }
 
 /** Creates a share token for the project if it doesn't already have one, and returns it either way. */
@@ -240,4 +302,23 @@ export async function getSharedProject(
   }
   const data = await getProjectData(store, projectStorageKey(row.user_id, row.id));
   return { ...toSummary(row), data };
+}
+
+/** Reads a project's thumbnail by its public share token - no ownership check, matching getSharedProject. */
+export async function getSharedThumbnail(
+  pool: Pool,
+  store: ObjectStore,
+  token: string,
+): Promise<{ body: Buffer; contentType: string }> {
+  const { rows } = await pool.query<ProjectRow>("SELECT * FROM projects WHERE share_token = $1", [
+    token,
+  ]);
+  const row = rows[0];
+  if (!row) {
+    throw new ProjectNotFoundError(`No project for this share token`);
+  }
+  if (!row.has_thumbnail) {
+    throw new ThumbnailNotFoundError(`No thumbnail for this share token`);
+  }
+  return getProjectThumbnail(store, projectThumbnailKey(row.user_id, row.id));
 }

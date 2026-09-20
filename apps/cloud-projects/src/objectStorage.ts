@@ -54,6 +54,10 @@ export function projectStorageKey(userId: string, projectId: string): string {
   return `projects/${userId}/${projectId}.json`;
 }
 
+export function projectThumbnailKey(userId: string, projectId: string): string {
+  return `projects/${userId}/${projectId}-thumbnail.png`;
+}
+
 /** Writes `data` to `key` and returns the serialized byte size written - callers (`projects.ts`)
  * use this to track each project's storage footprint for quota enforcement, without needing to
  * JSON.stringify `data` a second time themselves just to measure it. */
@@ -87,4 +91,32 @@ export async function getProjectData(store: ObjectStore, key: string): Promise<u
 
 export async function deleteProjectData(store: ObjectStore, key: string): Promise<void> {
   await store.client.send(new DeleteObjectCommand({ Bucket: store.bucket, Key: key }));
+}
+
+export async function putProjectThumbnail(
+  store: ObjectStore,
+  key: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  await store.client.send(
+    new PutObjectCommand({ Bucket: store.bucket, Key: key, Body: body, ContentType: contentType }),
+  );
+}
+
+export async function getProjectThumbnail(
+  store: ObjectStore,
+  key: string,
+): Promise<{ body: Buffer; contentType: string }> {
+  const response = await store.client.send(
+    new GetObjectCommand({ Bucket: store.bucket, Key: key }),
+  );
+  const bytes = await response.Body?.transformToByteArray();
+  if (bytes === undefined) {
+    throw new Error(`Object storage returned an empty body for key "${key}"`);
+  }
+  return {
+    body: Buffer.from(bytes),
+    contentType: response.ContentType ?? "application/octet-stream",
+  };
 }

@@ -39,6 +39,37 @@ describe("SharedProjectPanel", () => {
     expect(window.location.hash).toBe("#/editor");
   });
 
+  it("shows a thumbnail image when the shared project has one", async () => {
+    const projectData: VectorDocument = { layers: [], objects: [] };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        project: { id: "p1", name: "Shared Fox", data: projectData, hasThumbnail: true },
+      }),
+    );
+
+    render(<SharedProjectPanel route="/shared/abc123" onLoadDocument={vi.fn()} />);
+
+    const image = await screen.findByRole("img");
+    expect(image).toHaveClass("shared-project__thumbnail");
+    expect(image).toHaveAttribute("src", "http://localhost:8790/shared/abc123/thumbnail");
+  });
+
+  it("shows no thumbnail image when the shared project has none", async () => {
+    const projectData: VectorDocument = { layers: [], objects: [] };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        project: { id: "p1", name: "Shared Fox", data: projectData, hasThumbnail: false },
+      }),
+    );
+
+    render(<SharedProjectPanel route="/shared/abc123" onLoadDocument={vi.fn()} />);
+
+    await screen.findByText("Shared Fox");
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
   it("shows a clear message for an invalid or revoked token", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));

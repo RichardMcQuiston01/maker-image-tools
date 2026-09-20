@@ -12,13 +12,18 @@ import {
   createProject,
   createShareLink,
   deleteProject,
+  deleteThumbnail,
   getProject,
   getSharedProject,
+  getSharedThumbnail,
+  getThumbnail,
   InvalidProjectInputError,
   listProjects,
   ProjectNotFoundError,
   QuotaExceededError,
   revokeShareLink,
+  saveThumbnail,
+  ThumbnailNotFoundError,
   updateProject,
 } from "./projects.js";
 import { quotaForPlanTier } from "./quotas.js";
@@ -48,6 +53,11 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+function sendBinary(res: ServerResponse, status: number, body: Buffer, contentType: string): void {
+  res.writeHead(status, { "Content-Type": contentType });
+  res.end(body);
 }
 
 async function parseJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -126,6 +136,7 @@ function errorStatus(err: unknown): number {
     return 500;
   if (err instanceof InvalidProjectInputError) return 400;
   if (err instanceof ProjectNotFoundError) return 404;
+  if (err instanceof ThumbnailNotFoundError) return 404;
   if (err instanceof QuotaExceededError) return 402;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
@@ -142,7 +153,9 @@ function errorStatus(err: unknown): number {
 
 const PROJECT_ID_RE = /^\/projects\/([^/]+)$/;
 const SHARE_RE = /^\/projects\/([^/]+)\/share$/;
+const THUMBNAIL_RE = /^\/projects\/([^/]+)\/thumbnail$/;
 const SHARED_RE = /^\/shared\/([^/]+)$/;
+const SHARED_THUMBNAIL_RE = /^\/shared\/([^/]+)\/thumbnail$/;
 
 export function createServer(pool: Pool = createPool(), store: ObjectStore = getObjectStore()) {
   const migrationsReady = runMigrations(pool);
@@ -199,6 +212,42 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
           await revokeShareLink(pool, userId, projectId);
           res.writeHead(204);
           res.end();
+          return;
+        }
+
+        const thumbnailMatch = pathname.match(THUMBNAIL_RE);
+        if (thumbnailMatch) {
+          const projectId = thumbnailMatch[1]!;
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
+
+          if (req.method === "PUT") {
+            const contentType = req.headers["content-type"] ?? "";
+            const body = await readBody(req);
+            await saveThumbnail(pool, store, userId, projectId, body, contentType);
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+
+          if (req.method === "GET") {
+            const thumbnail = await getThumbnail(pool, store, userId, projectId);
+            sendBinary(res, 200, thumbnail.body, thumbnail.contentType);
+            return;
+          }
+
+          if (req.method === "DELETE") {
+            await deleteThumbnail(pool, store, userId, projectId);
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+        }
+
+        const sharedThumbnailMatch = pathname.match(SHARED_THUMBNAIL_RE);
+        if (sharedThumbnailMatch && req.method === "GET") {
+          const thumbnail = await getSharedThumbnail(pool, store, sharedThumbnailMatch[1]!);
+          sendBinary(res, 200, thumbnail.body, thumbnail.contentType);
           return;
         }
 

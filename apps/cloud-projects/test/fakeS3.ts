@@ -13,22 +13,30 @@ import type { ObjectStore } from "../src/objectStorage.js";
  * paid Stripe API.
  */
 export function createFakeObjectStore(): ObjectStore {
-  const objects = new Map<string, string>();
+  const objects = new Map<string, { body: Buffer; contentType: string | undefined }>();
   const client = {
     objects,
     send: vi.fn(async (command: unknown) => {
       if (command instanceof PutObjectCommand) {
-        objects.set(command.input.Key!, String(command.input.Body));
+        const input = command.input.Body;
+        const body = Buffer.isBuffer(input) ? input : Buffer.from(String(input), "utf-8");
+        objects.set(command.input.Key!, { body, contentType: command.input.ContentType });
         return {};
       }
       if (command instanceof GetObjectCommand) {
-        const body = objects.get(command.input.Key!);
-        if (body === undefined) {
+        const object = objects.get(command.input.Key!);
+        if (object === undefined) {
           const err = new Error(`NoSuchKey: ${command.input.Key}`);
           err.name = "NoSuchKey";
           throw err;
         }
-        return { Body: { transformToString: async () => body } };
+        return {
+          ContentType: object.contentType,
+          Body: {
+            transformToString: async () => object.body.toString("utf-8"),
+            transformToByteArray: async () => new Uint8Array(object.body),
+          },
+        };
       }
       if (command instanceof DeleteObjectCommand) {
         objects.delete(command.input.Key!);

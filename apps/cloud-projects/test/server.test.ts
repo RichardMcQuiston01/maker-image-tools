@@ -273,4 +273,108 @@ describe("cloud-projects server", () => {
     const response = await createProject(TOKEN_1, "Still fits", bigData);
     expect(response.status).toBe(201);
   });
+
+  describe("thumbnails", () => {
+    const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+    async function putThumbnail(token: string, projectId: string, body: Uint8Array) {
+      return fetch(`${baseUrl}/projects/${projectId}/thumbnail`, {
+        method: "PUT",
+        headers: { "Content-Type": "image/png", Authorization: `Bearer ${token}` },
+        body,
+      });
+    }
+
+    it("saves a thumbnail, lists hasThumbnail, and serves it back", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      expect(created.project.hasThumbnail).toBe(false);
+
+      const putResponse = await putThumbnail(TOKEN_1, created.project.id, PNG_BYTES);
+      expect(putResponse.status).toBe(204);
+
+      const listResponse = await fetch(`${baseUrl}/projects`, { headers: authHeaders(TOKEN_1) });
+      const listBody = await listResponse.json();
+      expect(listBody.projects[0].hasThumbnail).toBe(true);
+
+      const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}/thumbnail`, {
+        headers: authHeaders(TOKEN_1),
+      });
+      expect(getResponse.status).toBe(200);
+      expect(getResponse.headers.get("content-type")).toBe("image/png");
+      expect(new Uint8Array(await getResponse.arrayBuffer())).toEqual(PNG_BYTES);
+    });
+
+    it("returns 404 for a project with no thumbnail", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      const response = await fetch(`${baseUrl}/projects/${created.project.id}/thumbnail`, {
+        headers: authHeaders(TOKEN_1),
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it("rejects a non-PNG content type with 400", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      const response = await fetch(`${baseUrl}/projects/${created.project.id}/thumbnail`, {
+        method: "PUT",
+        headers: { "Content-Type": "image/jpeg", Authorization: `Bearer ${TOKEN_1}` },
+        body: PNG_BYTES,
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("rejects saving/reading another user's project's thumbnail with 404", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+
+      const putResponse = await putThumbnail(TOKEN_2, created.project.id, PNG_BYTES);
+      expect(putResponse.status).toBe(404);
+
+      await putThumbnail(TOKEN_1, created.project.id, PNG_BYTES);
+      const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}/thumbnail`, {
+        headers: authHeaders(TOKEN_2),
+      });
+      expect(getResponse.status).toBe(404);
+    });
+
+    it("deletes a thumbnail via DELETE", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      await putThumbnail(TOKEN_1, created.project.id, PNG_BYTES);
+
+      const deleteResponse = await fetch(`${baseUrl}/projects/${created.project.id}/thumbnail`, {
+        method: "DELETE",
+        headers: authHeaders(TOKEN_1),
+      });
+      expect(deleteResponse.status).toBe(204);
+
+      const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}/thumbnail`, {
+        headers: authHeaders(TOKEN_1),
+      });
+      expect(getResponse.status).toBe(404);
+    });
+
+    it("serves a shared project's thumbnail with no auth required", async () => {
+      const created = await (await createProject(TOKEN_1, "Shared", { v: 1 })).json();
+      await putThumbnail(TOKEN_1, created.project.id, PNG_BYTES);
+      const shareResponse = await fetch(`${baseUrl}/projects/${created.project.id}/share`, {
+        method: "POST",
+        headers: authHeaders(TOKEN_1),
+      });
+      const { token } = await shareResponse.json();
+
+      const response = await fetch(`${baseUrl}/shared/${token}/thumbnail`);
+      expect(response.status).toBe(200);
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(PNG_BYTES);
+    });
+
+    it("returns 404 for a shared project with no thumbnail", async () => {
+      const created = await (await createProject(TOKEN_1, "Shared", { v: 1 })).json();
+      const shareResponse = await fetch(`${baseUrl}/projects/${created.project.id}/share`, {
+        method: "POST",
+        headers: authHeaders(TOKEN_1),
+      });
+      const { token } = await shareResponse.json();
+
+      const response = await fetch(`${baseUrl}/shared/${token}/thumbnail`);
+      expect(response.status).toBe(404);
+    });
+  });
 });

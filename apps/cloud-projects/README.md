@@ -65,20 +65,25 @@ export S3_SECRET_ACCESS_KEY=makermaker
 
 ## API
 
-| Route                        | Body / Query       | Auth                            | Response                                                                                                                                               |
-| ---------------------------- | ------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST /projects`             | `{ name, data }`   | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                      |
-| `GET /projects`              | —                  | `Authorization: Bearer <token>` | `200 { projects }` — summaries only (no `data`), newest-updated first / `401`                                                                          |
-| `GET /projects/:id`          | —                  | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or not owned by the caller / `401`                                                              |
-| `PUT /projects/:id`          | `{ name?, data? }` | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the caller over their plan quota |
-| `DELETE /projects/:id`       | —                  | `Authorization: Bearer <token>` | `204` / `404` / `401`                                                                                                                                  |
-| `POST /projects/:id/share`   | —                  | `Authorization: Bearer <token>` | `200 { token }` — creates a share token if the project doesn't already have one / `404` / `401`                                                        |
-| `DELETE /projects/:id/share` | —                  | `Authorization: Bearer <token>` | `204` — revokes the project's share token / `404` / `401`                                                                                              |
-| `GET /shared/:token`         | —                  | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                   |
+| Route                            | Body / Query         | Auth                            | Response                                                                                                                                               |
+| -------------------------------- | -------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /projects`                 | `{ name, data }`     | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                      |
+| `GET /projects`                  | —                    | `Authorization: Bearer <token>` | `200 { projects }` — summaries only (no `data`), newest-updated first / `401`                                                                          |
+| `GET /projects/:id`              | —                    | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or not owned by the caller / `401`                                                              |
+| `PUT /projects/:id`              | `{ name?, data? }`   | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the caller over their plan quota |
+| `DELETE /projects/:id`           | —                    | `Authorization: Bearer <token>` | `204` / `404` / `401`                                                                                                                                  |
+| `POST /projects/:id/share`       | —                    | `Authorization: Bearer <token>` | `200 { token }` — creates a share token if the project doesn't already have one / `404` / `401`                                                        |
+| `DELETE /projects/:id/share`     | —                    | `Authorization: Bearer <token>` | `204` — revokes the project's share token / `404` / `401`                                                                                              |
+| `PUT /projects/:id/thumbnail`    | raw `image/png` body | `Authorization: Bearer <token>` | `204` / `400` for a non-`image/png` body / `404` / `401`                                                                                               |
+| `GET /projects/:id/thumbnail`    | —                    | `Authorization: Bearer <token>` | `200` raw `image/png` body / `404` if missing or not owned by the caller / `401`                                                                       |
+| `DELETE /projects/:id/thumbnail` | —                    | `Authorization: Bearer <token>` | `204` — removes the thumbnail if there is one (idempotent) / `404` / `401`                                                                             |
+| `GET /shared/:token`             | —                    | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                   |
+| `GET /shared/:token/thumbnail`   | —                    | —                               | `200` raw `image/png` body (no auth) / `404` if the token is unknown/revoked or has no thumbnail                                                       |
 
-`project` is `{ id, name, createdAt, updatedAt, data }`, where `data` is an arbitrary
+`project` is `{ id, name, createdAt, updatedAt, hasThumbnail, data }`, where `data` is an arbitrary
 JSON-serializable payload — `apps/web` is expected to pass its `VectorDocument` (or similar) here
-verbatim; this service never inspects its shape.
+verbatim; this service never inspects its shape. `hasThumbnail` tells a caller whether it's worth
+fetching `GET .../thumbnail` at all, instead of issuing a request that's guaranteed to `404`.
 
 ## Access control
 
@@ -116,10 +121,21 @@ every project's data from S3 just to measure it) and rejects the write with `Quo
 `POST /projects` - updating an existing project's `data` never changes how many projects the user
 has, only how large this one is.
 
+## Thumbnails
+
+A project can have one small preview image alongside its design JSON, stored in the same S3
+bucket under `projects/{userId}/{projectId}-thumbnail.png` (`objectStorage.ts`'s
+`projectThumbnailKey`) and tracked by a `has_thumbnail` column on the `projects` row so `GET
+/projects`/`GET /projects/:id` can report `hasThumbnail` without a speculative S3 lookup. Only
+`image/png` is accepted (that's all `apps/web`'s `renderThumbnail.ts` ever produces, by rasterizing
+the design's visible vector paths onto a small canvas) - anything else is rejected with `400`.
+`DELETE /projects/:id` also removes the project's thumbnail object, if it has one, so nothing is
+orphaned in the bucket. `GET /shared/:token/thumbnail` mirrors `GET /shared/:token`: no auth
+required, since a share link's whole point is letting anyone with it view the project - preview
+included.
+
 ## What's not here yet
 
-- **Thumbnails/previews** — `GET /projects` returns metadata only, no preview image. Would likely
-  live alongside the design JSON in the same S3 bucket once `apps/web` renders one to upload.
 - **Collaborative editing** — this is single-writer save/load, not realtime multi-user sync.
 
 ## Testing note

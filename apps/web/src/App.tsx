@@ -248,7 +248,12 @@ export function App() {
           ) : route === "/editor" ? (
             <>
               <div className="account-section">
-                <CloudProjectsPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />
+                <CloudProjectsPanel
+                  document={vectorDoc}
+                  onLoadDocument={handleLoadDocument}
+                  sourceWidth={image?.width}
+                  sourceHeight={image?.height}
+                />
                 <BillingPanel />
                 <MaterialDbPanel onApplyPreset={handleApplyPreset} />
                 <CommunityLibraryPanel document={vectorDoc} onLoadDocument={handleLoadDocument} />
