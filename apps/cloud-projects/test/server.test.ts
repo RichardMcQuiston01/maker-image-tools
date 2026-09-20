@@ -5,6 +5,7 @@ import { createServer } from "../src/server.js";
 import type { ObjectStore } from "../src/objectStorage.js";
 import { createFakeObjectStore } from "./fakeS3.js";
 import { startFakeAccounts, type FakeAccounts } from "./fakeAccounts.js";
+import { startFakeBilling, type FakeBilling } from "./fakeBilling.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 const USER_1 = "11111111-1111-1111-1111-111111111111";
@@ -18,7 +19,9 @@ describe("cloud-projects server", () => {
   let server: Server;
   let baseUrl: string;
   let accounts: FakeAccounts;
+  let billing: FakeBilling;
   const originalAccountsUrl = process.env.ACCOUNTS_URL;
+  const originalBillingUrl = process.env.BILLING_URL;
 
   beforeAll(async () => {
     pool = requireTestPool();
@@ -42,12 +45,17 @@ describe("cloud-projects server", () => {
     await resetTestDb(pool);
     accounts = await startFakeAccounts({ [TOKEN_1]: USER_1, [TOKEN_2]: USER_2 });
     process.env.ACCOUNTS_URL = accounts.baseUrl;
+    billing = await startFakeBilling({});
+    process.env.BILLING_URL = billing.baseUrl;
   });
 
   afterEach(async () => {
     await accounts.close();
+    await billing.close();
     if (originalAccountsUrl === undefined) delete process.env.ACCOUNTS_URL;
     else process.env.ACCOUNTS_URL = originalAccountsUrl;
+    if (originalBillingUrl === undefined) delete process.env.BILLING_URL;
+    else process.env.BILLING_URL = originalBillingUrl;
   });
 
   function authHeaders(token: string): Record<string, string> {
@@ -223,5 +231,46 @@ describe("cloud-projects server", () => {
   it("returns 404 for unknown routes", async () => {
     const response = await fetch(`${baseUrl}/nope`);
     expect(response.status).toBe(404);
+  });
+
+  it("rejects creating a project past the free tier's project count limit with 402", async () => {
+    for (let i = 0; i < 10; i++) {
+      const response = await createProject(TOKEN_1, `Project ${i}`, { v: i });
+      expect(response.status).toBe(201);
+    }
+    const overLimit = await createProject(TOKEN_1, "One too many", { v: 10 });
+    expect(overLimit.status).toBe(402);
+  });
+
+  it("rejects creating a project past the free tier's total byte size limit with 402", async () => {
+    const bigData = { blob: "x".repeat(6 * 1024 * 1024) };
+    const response = await createProject(TOKEN_1, "Too big", bigData);
+    expect(response.status).toBe(402);
+  });
+
+  it("rejects updating a project's data past the free tier's byte size limit with 402", async () => {
+    const created = await (await createProject(TOKEN_1, "Original", { v: 1 })).json();
+    const bigData = { blob: "x".repeat(6 * 1024 * 1024) };
+
+    const response = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+      method: "PUT",
+      headers: authHeaders(TOKEN_1),
+      body: JSON.stringify({ data: bigData }),
+    });
+    expect(response.status).toBe(402);
+  });
+
+  it("allows the pro tier's higher project count and byte size limits", async () => {
+    await billing.close();
+    billing = await startFakeBilling({ [USER_1]: "pro" });
+    process.env.BILLING_URL = billing.baseUrl;
+
+    for (let i = 0; i < 10; i++) {
+      const response = await createProject(TOKEN_1, `Project ${i}`, { v: i });
+      expect(response.status).toBe(201);
+    }
+    const bigData = { blob: "x".repeat(6 * 1024 * 1024) };
+    const response = await createProject(TOKEN_1, "Still fits", bigData);
+    expect(response.status).toBe(201);
   });
 });

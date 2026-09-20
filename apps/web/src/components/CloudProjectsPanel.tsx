@@ -11,6 +11,17 @@ interface ProjectSummary {
   updatedAt: string;
 }
 
+/** Reads a failed fetch response's `{ error }` body, falling back to a generic message with its status if the body isn't JSON. */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    if (typeof body.error === "string" && body.error.length > 0) return body.error;
+  } catch {
+    // Body wasn't JSON - fall through to the generic message below.
+  }
+  return `${fallback} with ${response.status}`;
+}
+
 interface CloudProjectsPanelProps {
   document: VectorDocument;
   onLoadDocument: (doc: VectorDocument) => void;
@@ -70,7 +81,8 @@ export function CloudProjectsPanel({
         body: JSON.stringify({ name: name.trim(), data: vectorDocument }),
       });
       if (!response.ok) {
-        throw new Error(`Save failed with ${response.status}`);
+        setError(await readErrorMessage(response, "Save failed"));
+        return;
       }
       setName("");
       await refreshProjects(token);
