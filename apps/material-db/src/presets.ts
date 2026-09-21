@@ -142,10 +142,15 @@ export interface PresetSearch {
   operation?: string | undefined;
 }
 
-/** The current (highest-version, approved) preset for each matching (material, machineType,
- * operation) key - what a UI picking sane defaults for a material should query. */
+/**
+ * The current (highest-version, approved) preset for each matching (material, machineType,
+ * operation) key - what a UI picking sane defaults for a material should query. `material` is
+ * matched against `material_search` (see migration 002_fulltext_search.sql) via
+ * `plainto_tsquery`, so a multi-word query matches regardless of word order - unlike the plain
+ * substring match this replaced.
+ */
 export async function searchPresets(pool: Pool, search: PresetSearch): Promise<Preset[]> {
-  const material = search.material ? normalizeKey(search.material) : null;
+  const material = search.material?.trim() || null;
   const machineType = search.machineType ? normalizeKey(search.machineType) : null;
   const operation = search.operation ? normalizeKey(search.operation) : null;
 
@@ -153,7 +158,7 @@ export async function searchPresets(pool: Pool, search: PresetSearch): Promise<P
     `SELECT DISTINCT ON (material, machine_type, operation) *
      FROM presets
      WHERE status = 'approved'
-       AND ($1::text IS NULL OR material ILIKE '%' || $1 || '%')
+       AND ($1::text IS NULL OR material_search @@ plainto_tsquery('english', $1))
        AND ($2::text IS NULL OR machine_type = $2)
        AND ($3::text IS NULL OR operation = $3)
      ORDER BY material, machine_type, operation, version DESC`,

@@ -121,7 +121,7 @@ describe("presets", () => {
       expect(results[0]!.speed).toBe(275);
     });
 
-    it("filters by material substring, machineType, and operation", async () => {
+    it("filters by material full-text search, machineType, and operation", async () => {
       const plywood = await submitPreset(pool, baseSubmission());
       await approvePreset(pool, plywood.id, USER_2);
       const acrylic = await submitPreset(
@@ -139,6 +139,24 @@ describe("presets", () => {
       expect((await searchPresets(pool, { operation: "engrave" })).map((p) => p.material)).toEqual([
         "acrylic 3mm",
       ]);
+    });
+
+    it("searches full text regardless of word order, unlike a plain substring match", async () => {
+      const plywood = await submitPreset(pool, baseSubmission());
+      await approvePreset(pool, plywood.id, USER_2);
+      const acrylic = await submitPreset(
+        pool,
+        baseSubmission({ material: "Acrylic 3mm", machineType: "co2-laser", operation: "engrave" }),
+      );
+      await approvePreset(pool, acrylic.id, USER_2);
+
+      // "plywood birch" never appears as a contiguous substring ("birch
+      // plywood" is the actual order) - a real full-text search still
+      // matches both words regardless of order.
+      expect(
+        (await searchPresets(pool, { material: "plywood birch" })).map((p) => p.material),
+      ).toEqual(["baltic birch plywood 3mm"]);
+      expect(await searchPresets(pool, { material: "maple" })).toEqual([]);
     });
   });
 

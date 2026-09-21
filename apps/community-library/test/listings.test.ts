@@ -117,6 +117,34 @@ describe("listings", () => {
       ]);
     });
 
+    it("searches full text regardless of word order, unlike a plain substring match", async () => {
+      const fox = await publishListing(pool, store, baseSubmission());
+      await approveListing(pool, fox.id, REVIEWER);
+      const box = await publishListing(
+        pool,
+        store,
+        baseSubmission({
+          title: "Storage Box",
+          description: "A cardboard box joint container",
+          tags: ["box"],
+        }),
+      );
+      await approveListing(pool, box.id, REVIEWER);
+
+      // "container box" never appears as a contiguous substring in either
+      // field ("box joint container" is the actual order) - a real
+      // full-text search still matches both words regardless of order.
+      expect((await listListings(pool, { q: "container box" })).map((l) => l.title)).toEqual([
+        "Storage Box",
+      ]);
+      // Matches a word in the description even though it's absent from the title.
+      expect((await listListings(pool, { q: "cardboard" })).map((l) => l.title)).toEqual([
+        "Storage Box",
+      ]);
+      // No match for terms absent from both fields.
+      expect(await listListings(pool, { q: "dragon" })).toEqual([]);
+    });
+
     it("sorts by rating when requested", async () => {
       const low = await publishListing(pool, store, baseSubmission({ title: "Low rated" }));
       await approveListing(pool, low.id, REVIEWER);

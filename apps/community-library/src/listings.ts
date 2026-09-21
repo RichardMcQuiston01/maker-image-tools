@@ -121,9 +121,16 @@ export interface ListingSearch {
   sort?: "newest" | "rating" | undefined;
 }
 
-/** Approved listings only, matching the search/browse filters - summaries, no `data`. */
+/**
+ * Approved listings only, matching the search/browse filters - summaries,
+ * no `data`. `q` is matched against `search_vector` (see migration
+ * 002_fulltext_search.sql) via `websearch_to_tsquery`, which supports the
+ * query syntax a public search box's users already expect (quoted phrases,
+ * `-exclude`, `or`) - unlike the plain substring match this replaced, word
+ * order in the query no longer has to match the listing's text.
+ */
 export async function listListings(pool: Pool, search: ListingSearch): Promise<ListingSummary[]> {
-  const q = search.q?.trim() ? `%${search.q.trim()}%` : null;
+  const q = search.q?.trim() || null;
   const tag = search.tag ? search.tag.trim().toLowerCase() : null;
   const orderBy =
     search.sort === "rating" ? "rating_avg DESC, rating_count DESC" : "created_at DESC";
@@ -131,7 +138,7 @@ export async function listListings(pool: Pool, search: ListingSearch): Promise<L
   const { rows } = await pool.query<ListingRow>(
     `SELECT * FROM listings
      WHERE status = 'approved'
-       AND ($1::text IS NULL OR title ILIKE $1 OR description ILIKE $1)
+       AND ($1::text IS NULL OR search_vector @@ websearch_to_tsquery('english', $1))
        AND ($2::text IS NULL OR $2 = ANY(tags))
      ORDER BY ${orderBy}`,
     [q, tag],

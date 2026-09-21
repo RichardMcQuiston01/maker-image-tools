@@ -84,6 +84,15 @@ approves or rejects it; search (`GET /presets`) only ever returns the highest-ve
 row per key, while `GET /presets/history` returns every version (any status) for a key, so nothing
 is ever deleted or overwritten — that's the "versioned" part.
 
+## Search
+
+`GET /presets`'s `material` param runs a real Postgres full-text search, not a substring match.
+Migration `002_fulltext_search.sql` adds a generated, stored `tsvector` column (`material_search`)
+with a GIN index, kept in sync automatically on every insert rather than computed per query.
+`searchPresets` matches it via `plainto_tsquery`, so `material=plywood birch` matches "Baltic Birch
+Plywood 3mm" - unlike the old `ILIKE '%...%'`, a multi-word query no longer has to appear in that
+exact order.
+
 ## API
 
 | Route                       | Body / Query                                                                  | Response                                                                                                           |
@@ -105,7 +114,6 @@ so a future seed migration is a straight field mapping.
 - **Duplicate-submission detection / voting** — two users submitting near-identical settings for the
   same key just creates two versions; there's no "this matches an existing preset" nudge or
   upvote/downvote signal yet.
-- **Full-text/fuzzy search** — `material` filtering is a plain `ILIKE '%...%'`, not a search index.
 
 ## Testing note
 
