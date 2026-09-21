@@ -82,6 +82,16 @@ same listing again updates your existing rating rather than adding a second one.
 recomputes and stores the listing's `ratingAvg`/`ratingCount` in the same transaction, so browsing/
 sorting by rating never needs a live aggregate join.
 
+## Search
+
+`GET /listings`'s `q` param runs a real Postgres full-text search over `title`/`description`,
+not a substring match. Migration `002_fulltext_search.sql` adds a generated, stored `tsvector`
+column (`search_vector`) - title weighted above description - with a GIN index, kept in sync
+automatically on every insert/update rather than computed per query. `listListings` matches it via
+`websearch_to_tsquery`, which understands the query syntax a public search box's users already
+expect (quoted phrases, `-exclude`, `or`) and, unlike the old `ILIKE '%...%'`, matches regardless of
+word order across the two fields.
+
 ## API
 
 | Route                        | Body / Query                                   | Response                                                                                                            |
@@ -102,8 +112,6 @@ plus `data` on the single-listing/publish/ratings responses. `rating` is
 
 ## What's not here yet
 
-- **Full-text/fuzzy search** — `q` filtering is a plain `ILIKE '%...%'` over title/description, not
-  a search index.
 - **Abuse handling for ratings** — no rate limiting, no verified-purchase/verified-use gating; any
   `userId` can rate any approved listing once.
 

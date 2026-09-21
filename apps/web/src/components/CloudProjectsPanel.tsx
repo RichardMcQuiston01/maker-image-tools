@@ -3,12 +3,64 @@ import type { VectorDocument } from "@maker/core-vector";
 import { useAuth } from "../hooks/useAuth";
 import { CLOUD_PROJECTS_URL } from "../lib/cloudProjectsUrl";
 import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
+import { renderThumbnail } from "../lib/renderThumbnail";
 
 interface ProjectSummary {
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
+  hasThumbnail: boolean;
+}
+
+/**
+ * Fetches a project's thumbnail with the caller's bearer token (an <img
+ * src> can't carry an Authorization header) and shows it as an object URL,
+ * revoked on cleanup. Renders nothing while loading or if the fetch fails -
+ * a missing thumbnail just falls back to the plain text list item.
+ */
+function ProjectThumbnail({
+  projectId,
+  projectName,
+  token,
+}: {
+  projectId: string;
+  projectName: string;
+  token: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void (async () => {
+      try {
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${projectId}/thumbnail`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok || cancelled) return;
+        const blob = await response.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch {
+        // Best-effort - a missing/failed thumbnail just falls back to no image.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [projectId, token]);
+
+  if (!url) return null;
+  return (
+    <img
+      className="cloud-projects-panel__thumbnail"
+      src={url}
+      alt={`Thumbnail for ${projectName}`}
+    />
+  );
 }
 
 /** Reads a failed fetch response's `{ error }` body, falling back to a generic message with its status if the body isn't JSON. */
@@ -25,11 +77,16 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
 interface CloudProjectsPanelProps {
   document: VectorDocument;
   onLoadDocument: (doc: VectorDocument) => void;
+  /** The traced image's pixel dimensions - the coordinate space vectorDocument's paths are in - used to rasterize a thumbnail on save. Defaults to 400x400 when there's no source image yet, matching VectorPreview's own fallback. */
+  sourceWidth?: number | undefined;
+  sourceHeight?: number | undefined;
 }
 
 export function CloudProjectsPanel({
   document: vectorDocument,
   onLoadDocument,
+  sourceWidth = 400,
+  sourceHeight = 400,
 }: CloudProjectsPanelProps) {
   const { status: authStatus, user, token } = useAuth();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -84,6 +141,19 @@ export function CloudProjectsPanel({
         setError(await readErrorMessage(response, "Save failed"));
         return;
       }
+      const { project } = (await response.json()) as { project: { id: string } };
+      try {
+        const thumbnail = await renderThumbnail(vectorDocument, sourceWidth, sourceHeight);
+        if (thumbnail) {
+          await fetch(`${CLOUD_PROJECTS_URL}/projects/${project.id}/thumbnail`, {
+            method: "PUT",
+            headers: { "Content-Type": "image/png", Authorization: `Bearer ${token}` },
+            body: thumbnail,
+          });
+        }
+      } catch {
+        // Best-effort - a thumbnail failure shouldn't block a successful save.
+      }
       setName("");
       await refreshProjects(token);
     } catch (err) {
@@ -95,7 +165,7 @@ export function CloudProjectsPanel({
     } finally {
       setBusy(false);
     }
-  }, [token, name, vectorDocument, refreshProjects]);
+  }, [token, name, vectorDocument, sourceWidth, sourceHeight, refreshProjects]);
 
   const handleLoad = useCallback(
     async (id: string) => {
@@ -294,6 +364,9 @@ export function CloudProjectsPanel({
         <ul className="cloud-projects-panel__list">
           {projects.map((project) => (
             <li key={project.id}>
+              {project.hasThumbnail && token && (
+                <ProjectThumbnail projectId={project.id} projectName={project.name} token={token} />
+              )}
               <span>{project.name}</span>
               <div className="ai-panel__actions">
                 <button type="button" disabled={busy} onClick={() => void handleLoad(project.id)}>

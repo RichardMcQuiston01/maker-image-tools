@@ -12,6 +12,7 @@ interface SharedProject {
   id: string;
   name: string;
   data: VectorDocument;
+  hasThumbnail: boolean;
 }
 
 /**
@@ -79,6 +80,13 @@ export function SharedProjectPanel({ route, onLoadDocument }: SharedProjectPanel
 
   return (
     <div className="shared-project">
+      {project.hasThumbnail && (
+        <img
+          className="shared-project__thumbnail"
+          src={`${CLOUD_PROJECTS_URL}/shared/${token}/thumbnail`}
+          alt={`Thumbnail for ${project.name}`}
+        />
+      )}
       <h2>{project.name}</h2>
       <p className="shared-project__hint">Someone shared this design with you.</p>
       <button type="button" onClick={handleOpen}>

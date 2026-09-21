@@ -140,6 +140,14 @@ body {
   color: light-dark(#b91c1c, #f87171);
 }
 
+.shared-project__thumbnail {
+  width: 100%;
+  max-width: 20rem;
+  height: auto;
+  border: 1px solid light-dark(#eee, #2a2a2a);
+  border-radius: 0.375rem;
+}
+
 .reset-password {
   display: flex;
   flex-direction: column;
@@ -236,6 +244,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.cloud-projects-panel__thumbnail {
+  width: 100%;
+  max-width: 12rem;
+  height: auto;
+  border: 1px solid light-dark(#eee, #2a2a2a);
+  border-radius: 0.375rem;
 }
 
 .material-db-panel__search,

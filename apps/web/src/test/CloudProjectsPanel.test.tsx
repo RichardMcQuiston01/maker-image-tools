@@ -3,6 +3,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createDocument, type VectorDocument } from "@maker/core-vector";
 import { CloudProjectsPanel } from "../components/CloudProjectsPanel";
 import { AuthProvider } from "../hooks/AuthContext";
+import { renderThumbnail } from "../lib/renderThumbnail";
+
+vi.mock("../lib/renderThumbnail", () => ({
+  renderThumbnail: vi.fn(),
+}));
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -24,6 +29,13 @@ describe("CloudProjectsPanel", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn());
+    vi.mocked(renderThumbnail).mockReset().mockResolvedValue(undefined);
+    // jsdom doesn't implement these - ProjectThumbnail's blob-URL display
+    // needs them, and a stub here is harmless for every other test (none
+    // of them render a project with hasThumbnail: true, so ProjectThumbnail
+    // never mounts and these are simply never called).
+    URL.createObjectURL ??= vi.fn(() => "blob:fake-thumbnail-url");
+    URL.revokeObjectURL ??= vi.fn();
   });
 
   afterEach(() => {
@@ -102,6 +114,106 @@ describe("CloudProjectsPanel", () => {
       data: EMPTY_DOC,
     });
     expect(await screen.findByText("New Project")).toBeInTheDocument();
+  });
+
+  it("uploads a rendered thumbnail after saving", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { projects: [] }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { project: { id: "p1" } }));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { projects: [] }));
+    const thumbnailBlob = new Blob(["fake-png"], { type: "image/png" });
+    vi.mocked(renderThumbnail).mockResolvedValueOnce(thumbnailBlob);
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    const nameInput = await screen.findByPlaceholderText("Project name");
+    fireEvent.change(nameInput, { target: { value: "New Project" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    const [url, init] = fetchMock.mock.calls[3]!;
+    expect(String(url)).toBe("http://localhost:8790/projects/p1/thumbnail");
+    expect(init?.method).toBe("PUT");
+    expect((init?.headers as Record<string, string>)["Content-Type"]).toBe("image/png");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect(init?.body).toBe(thumbnailBlob);
+  });
+
+  it("doesn't fail the save if the thumbnail upload fails", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { projects: [] }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { project: { id: "p1" } }));
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "New Project",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            hasThumbnail: false,
+          },
+        ],
+      }),
+    );
+    vi.mocked(renderThumbnail).mockResolvedValueOnce(new Blob(["fake-png"], { type: "image/png" }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    const nameInput = await screen.findByPlaceholderText("Project name");
+    fireEvent.change(nameInput, { target: { value: "New Project" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("New Project")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a thumbnail image for a project that has one", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "My Design",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            hasThumbnail: true,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(new Blob(["fake-png"], { type: "image/png" }), { status: 200 }),
+    );
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+
+    const image = await screen.findByRole("img");
+    expect(image).toHaveClass("cloud-projects-panel__thumbnail");
+    await waitFor(() =>
+      expect(String(fetchMock.mock.calls[2]![0])).toBe(
+        "http://localhost:8790/projects/p1/thumbnail",
+      ),
+    );
   });
 
   it("shows the server's quota error message when saving fails with 402", async () => {
