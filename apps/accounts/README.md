@@ -66,6 +66,7 @@ export DATABASE_URL=postgres://maker:maker@localhost:5432/maker_accounts
 | `GET /oauth/:provider/start`    | —                     | optional `?linkToken=<token>`   | `302` to the provider's consent page / `404` unknown provider / `401` invalid/expired `linkToken`                            |
 | `GET /oauth/:provider/callback` | —                     | —                               | `302` back to `WEB_APP_URL` with `?token=` or `?error=` / `404` unknown provider                                             |
 | `GET /users/:id/role`           | —                     | —                               | `200 { role }` / `404` unknown user id                                                                                       |
+| `GET /users/by-email`           | —                     | `Authorization: Bearer <token>` | `200 { id }` / `400` missing `email` query parameter / `401` invalid/expired token / `404` no user with that email           |
 | `POST /users/:id/role`          | `{ role }`            | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid role / `401` invalid/expired token / `403` caller isn't a moderator / `404` unknown target id |
 | `POST /me/password`             | `{ password }`        | `Authorization: Bearer <token>` | `200 { user }` / `400` invalid password / `401` invalid/expired token / `409` account already has a password                 |
 | `POST /password-reset/request`  | `{ email }`           | —                               | `202`, always the same response whether or not the email is registered                                                       |
@@ -82,6 +83,13 @@ trust each other's plain ids everywhere else.
 `POST /users/:id/role` is the role-management API: an already-authenticated moderator sets any
 user's `role` to `user` or `moderator` (promote or demote). See "Roles" below for how this fits
 alongside `MODERATOR_EMAILS`.
+
+`GET /users/by-email` resolves an email to a user id - `apps/cloud-projects` calls it (with the
+caller's own bearer token) so its "invite a collaborator" UI can take an email address instead of
+asking someone to paste in a raw account id. Unlike `GET /users/:id/role`, this one requires
+authentication: an id is already something this repo's services treat as freely shareable between
+themselves, but an email is a piece of the account holder's own information, so resolving one
+anonymously would let anyone enumerate registered emails one guess at a time.
 
 `POST /me/password` lets a signed-in user set a password for their own account - the one way an
 OAuth-only account (`password_hash IS NULL`, see "OAuth login" below) gains the ability to also log

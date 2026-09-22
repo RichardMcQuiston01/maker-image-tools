@@ -12,6 +12,7 @@ import {
   getThumbnail,
   InvalidProjectInputError,
   listProjects,
+  NotProjectOwnerError,
   ProjectNotFoundError,
   QuotaExceededError,
   revokeShareLink,
@@ -19,7 +20,7 @@ import {
   ThumbnailNotFoundError,
   updateProject,
 } from "../src/projects.js";
-import { quotaForPlanTier } from "../src/quotas.js";
+import { quotaForPlanTier, type PlanQuota } from "../src/quotas.js";
 import { createFakeObjectStore } from "./fakeS3.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
@@ -32,6 +33,12 @@ const USER_2 = "22222222-2222-2222-2222-222222222222";
 // limits as a stand-in for "no limit" - actual quota enforcement gets its
 // own tests below.
 const FREE_QUOTA = quotaForPlanTier("free");
+
+/** updateProject resolves quota lazily via a callback (keyed by the project's owner id) rather than
+ * a plain value, since a collaborator's edit is charged against the owner's plan, not their own. */
+function withQuota(quota: PlanQuota) {
+  return async () => quota;
+}
 
 describe("projects", () => {
   let pool: Pool;
@@ -110,7 +117,7 @@ describe("projects", () => {
       USER_1,
       project.id,
       { name: "Renamed" },
-      FREE_QUOTA,
+      withQuota(FREE_QUOTA),
     );
     expect(renamed.name).toBe("Renamed");
     expect(renamed.data).toEqual({ v: 1 });
@@ -121,7 +128,7 @@ describe("projects", () => {
       USER_1,
       project.id,
       { data: { v: 2 } },
-      FREE_QUOTA,
+      withQuota(FREE_QUOTA),
     );
     expect(rewritten.name).toBe("Renamed");
     expect(rewritten.data).toEqual({ v: 2 });
@@ -130,7 +137,7 @@ describe("projects", () => {
   it("rejects renaming to a blank name", async () => {
     const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
     await expect(
-      updateProject(pool, store, USER_1, project.id, { name: "  " }, FREE_QUOTA),
+      updateProject(pool, store, USER_1, project.id, { name: "  " }, withQuota(FREE_QUOTA)),
     ).rejects.toThrow(InvalidProjectInputError);
   });
 
@@ -193,7 +200,7 @@ describe("projects", () => {
           USER_1,
           project.id,
           { data: { blob: "x".repeat(200) } },
-          TINY_QUOTA,
+          withQuota(TINY_QUOTA),
         ),
       ).rejects.toThrow(QuotaExceededError);
     });
@@ -206,7 +213,7 @@ describe("projects", () => {
         USER_1,
         project.id,
         { data: { v: 2 } },
-        TINY_QUOTA,
+        withQuota(TINY_QUOTA),
       );
       expect(updated.data).toEqual({ v: 2 });
     });
@@ -220,7 +227,7 @@ describe("projects", () => {
         USER_1,
         a.id,
         { data: { v: 10 } },
-        TINY_QUOTA,
+        withQuota(TINY_QUOTA),
       );
       expect(updated.data).toEqual({ v: 10 });
     });
@@ -313,6 +320,122 @@ describe("projects", () => {
       const project = await createProject(pool, store, USER_1, "Shared", { v: 1 }, FREE_QUOTA);
       const token = await createShareLink(pool, USER_1, project.id);
       await expect(getSharedThumbnail(pool, store, token)).rejects.toThrow(ThumbnailNotFoundError);
+    });
+  });
+
+  describe("collaborator access", () => {
+    async function addCollaborator(projectId: string, collaboratorUserId: string): Promise<void> {
+      await pool.query("INSERT INTO project_collaborators (project_id, user_id) VALUES ($1, $2)", [
+        projectId,
+        collaboratorUserId,
+      ]);
+    }
+
+    it('marks the owner\'s own project with role "owner"', async () => {
+      const project = await createProject(pool, store, USER_1, "Mine", { v: 1 }, FREE_QUOTA);
+      expect(project.role).toBe("owner");
+      expect((await getProject(pool, store, USER_1, project.id)).role).toBe("owner");
+    });
+
+    it('lets a collaborator view and edit a project, marked with role "collaborator"', async () => {
+      const project = await createProject(pool, store, USER_1, "Shared doc", { v: 1 }, FREE_QUOTA);
+      await addCollaborator(project.id, USER_2);
+
+      const viewed = await getProject(pool, store, USER_2, project.id);
+      expect(viewed.role).toBe("collaborator");
+      expect(viewed.data).toEqual({ v: 1 });
+
+      const edited = await updateProject(
+        pool,
+        store,
+        USER_2,
+        project.id,
+        { data: { v: 2 } },
+        withQuota(FREE_QUOTA),
+      );
+      expect(edited.role).toBe("collaborator");
+      expect(edited.data).toEqual({ v: 2 });
+
+      // The owner sees the collaborator's edit too - it's the same project.
+      expect((await getProject(pool, store, USER_1, project.id)).data).toEqual({ v: 2 });
+    });
+
+    it("charges a collaborator's edit against the project owner's quota, not the collaborator's own", async () => {
+      const project = await createProject(pool, store, USER_1, "Owner's doc", { v: 1 }, FREE_QUOTA);
+      await addCollaborator(project.id, USER_2);
+
+      let quotaRequestedFor: string | undefined;
+      const getQuota = async (ownerId: string) => {
+        quotaRequestedFor = ownerId;
+        return FREE_QUOTA;
+      };
+      await updateProject(pool, store, USER_2, project.id, { data: { v: 2 } }, getQuota);
+      expect(quotaRequestedFor).toBe(USER_1);
+    });
+
+    it("still lists a collaborator's edit as counting toward the owner's total bytes", async () => {
+      const project = await createProject(pool, store, USER_1, "Owner's doc", { v: 1 }, FREE_QUOTA);
+      await addCollaborator(project.id, USER_2);
+      await expect(
+        updateProject(
+          pool,
+          store,
+          USER_2,
+          project.id,
+          { data: { blob: "x".repeat(200) } },
+          withQuota({ maxProjects: 10, maxTotalBytes: 100 }),
+        ),
+      ).rejects.toThrow(QuotaExceededError);
+    });
+
+    it("includes projects the caller collaborates on (not just owns) in listProjects", async () => {
+      await createProject(pool, store, USER_1, "Owner's own other project", { v: 0 }, FREE_QUOTA);
+      const shared = await createProject(
+        pool,
+        store,
+        USER_1,
+        "Shared with me",
+        { v: 1 },
+        FREE_QUOTA,
+      );
+      await addCollaborator(shared.id, USER_2);
+
+      const list = await listProjects(pool, USER_2);
+      expect(list).toHaveLength(1);
+      expect(list[0]!.id).toBe(shared.id);
+      expect(list[0]!.role).toBe("collaborator");
+    });
+
+    it("throws ProjectNotFoundError for a caller with no relationship to the project at all", async () => {
+      const project = await createProject(pool, store, USER_1, "Private", { v: 1 }, FREE_QUOTA);
+      await expect(getProject(pool, store, USER_2, project.id)).rejects.toThrow(
+        ProjectNotFoundError,
+      );
+    });
+
+    it("rejects a collaborator deleting, sharing, or thumbnail-deleting with NotProjectOwnerError, not ProjectNotFoundError", async () => {
+      const project = await createProject(pool, store, USER_1, "Owner's doc", { v: 1 }, FREE_QUOTA);
+      await addCollaborator(project.id, USER_2);
+
+      await expect(deleteProject(pool, store, USER_2, project.id)).rejects.toThrow(
+        NotProjectOwnerError,
+      );
+      await expect(createShareLink(pool, USER_2, project.id)).rejects.toThrow(NotProjectOwnerError);
+      await expect(revokeShareLink(pool, USER_2, project.id)).rejects.toThrow(NotProjectOwnerError);
+    });
+
+    it("lets a collaborator manage the project's thumbnail", async () => {
+      const project = await createProject(pool, store, USER_1, "Owner's doc", { v: 1 }, FREE_QUOTA);
+      await addCollaborator(project.id, USER_2);
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+      await saveThumbnail(pool, store, USER_2, project.id, png, "image/png");
+      expect((await getThumbnail(pool, store, USER_2, project.id)).body).toEqual(png);
+
+      await deleteThumbnail(pool, store, USER_2, project.id);
+      await expect(getThumbnail(pool, store, USER_2, project.id)).rejects.toThrow(
+        ThumbnailNotFoundError,
+      );
     });
   });
 });

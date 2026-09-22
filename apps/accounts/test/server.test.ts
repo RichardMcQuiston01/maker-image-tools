@@ -154,6 +154,41 @@ describe("accounts server", () => {
     expect(response.status).toBe(404);
   });
 
+  describe("GET /users/by-email", () => {
+    it("looks up a user's id by email for an authenticated caller", async () => {
+      const target = await (await signup("target@example.com", "hunter22222")).json();
+      const caller = await (await signup("caller@example.com", "hunter22222")).json();
+
+      const response = await fetch(
+        `${baseUrl}/users/by-email?email=${encodeURIComponent("target@example.com")}`,
+        { headers: { Authorization: `Bearer ${caller.token}` } },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ id: target.user.id });
+    });
+
+    it("returns 404 for an email with no matching user", async () => {
+      const caller = await (await signup("caller@example.com", "hunter22222")).json();
+      const response = await fetch(`${baseUrl}/users/by-email?email=nobody@example.com`, {
+        headers: { Authorization: `Bearer ${caller.token}` },
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it("rejects an unauthenticated caller with 401", async () => {
+      const response = await fetch(`${baseUrl}/users/by-email?email=anyone@example.com`);
+      expect(response.status).toBe(401);
+    });
+
+    it("rejects a missing email query parameter with 400", async () => {
+      const caller = await (await signup("caller@example.com", "hunter22222")).json();
+      const response = await fetch(`${baseUrl}/users/by-email`, {
+        headers: { Authorization: `Bearer ${caller.token}` },
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
   describe("POST /users/:id/role", () => {
     async function promoteToModerator(email: string) {
       const originalModeratorEmails = process.env.MODERATOR_EMAILS;

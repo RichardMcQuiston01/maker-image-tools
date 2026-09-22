@@ -18,13 +18,16 @@ export interface ProjectSummary {
   createdAt: string;
   updatedAt: string;
   hasThumbnail: boolean;
+  /** The caller's relationship to this project - omitted for the unauthenticated share-link routes,
+   * where there's no caller to relate it to. See "Collaborators" in the README for what each can do. */
+  role?: "owner" | "collaborator";
 }
 
 export interface Project extends ProjectSummary {
   data: unknown;
 }
 
-interface ProjectRow {
+export interface ProjectRow {
   id: string;
   user_id: string;
   name: string;
@@ -45,8 +48,11 @@ function toSummary(row: ProjectRow): ProjectSummary {
   };
 }
 
-/** Thrown when a project doesn't exist, isn't owned by the calling user, or has no matching share token. */
+/** Thrown when a project doesn't exist, the calling user has no access to it (not its owner, not a collaborator), or it has no matching share token. */
 export class ProjectNotFoundError extends Error {}
+
+/** Thrown when a caller can access a project (as a collaborator) but the action requires being its owner. */
+export class NotProjectOwnerError extends Error {}
 
 /** Thrown for a caller-supplied `name`/`data` that fails basic validation. */
 export class InvalidProjectInputError extends Error {}
@@ -127,31 +133,64 @@ export async function createProject(
   const row = rows[0]!;
   const size = await putProjectData(store, projectStorageKey(userId, row.id), data);
   await pool.query("UPDATE projects SET data_size_bytes = $1 WHERE id = $2", [size, row.id]);
-  return { ...toSummary(row), data };
+  return { ...toSummary(row), role: "owner", data };
 }
 
+/** Every project the caller owns, plus every project someone else owns but shared with them as a collaborator. */
 export async function listProjects(pool: Pool, userId: string): Promise<ProjectSummary[]> {
   const { rows } = await pool.query<ProjectRow>(
-    "SELECT * FROM projects WHERE user_id = $1 ORDER BY updated_at DESC",
+    `SELECT * FROM projects p
+     WHERE p.user_id = $1 OR EXISTS (
+       SELECT 1 FROM project_collaborators c WHERE c.project_id = p.id AND c.user_id = $1
+     )
+     ORDER BY p.updated_at DESC`,
     [userId],
   );
-  return rows.map(toSummary);
+  return rows.map((row) => ({ ...toSummary(row), role: roleFor(row, userId) }));
 }
 
-async function findOwnedProjectRow(
+/** A project row the caller can view/edit as either its owner or one of its collaborators. */
+export async function findAccessibleProjectRow(
   pool: Pool,
   userId: string,
   projectId: string,
 ): Promise<ProjectRow> {
   const { rows } = await pool.query<ProjectRow>(
-    "SELECT * FROM projects WHERE id = $1 AND user_id = $2",
+    `SELECT p.* FROM projects p
+     WHERE p.id = $1 AND (p.user_id = $2 OR EXISTS (
+       SELECT 1 FROM project_collaborators c WHERE c.project_id = p.id AND c.user_id = $2
+     ))`,
     [projectId, userId],
   );
   const row = rows[0];
   if (!row) {
-    throw new ProjectNotFoundError(`No project "${projectId}" for this user`);
+    throw new ProjectNotFoundError(`No project "${projectId}" accessible to this user`);
   }
   return row;
+}
+
+/**
+ * A project row for an action only its owner can take (delete, manage
+ * sharing, manage collaborators). Distinguishes "doesn't exist/no access at
+ * all" (`ProjectNotFoundError`, 404 - same as a stranger would get) from
+ * "you can see this project but you're not its owner" (`NotProjectOwnerError`,
+ * 403 - a collaborator already knows it exists, so a 404 here would just be
+ * a lie).
+ */
+export async function findOwnedProjectRow(
+  pool: Pool,
+  userId: string,
+  projectId: string,
+): Promise<ProjectRow> {
+  const row = await findAccessibleProjectRow(pool, userId, projectId);
+  if (row.user_id !== userId) {
+    throw new NotProjectOwnerError(`Only project "${projectId}"'s owner can do this`);
+  }
+  return row;
+}
+
+function roleFor(row: ProjectRow, userId: string): "owner" | "collaborator" {
+  return row.user_id === userId ? "owner" : "collaborator";
 }
 
 export async function getProject(
@@ -160,9 +199,9 @@ export async function getProject(
   userId: string,
   projectId: string,
 ): Promise<Project> {
-  const row = await findOwnedProjectRow(pool, userId, projectId);
-  const data = await getProjectData(store, projectStorageKey(userId, row.id));
-  return { ...toSummary(row), data };
+  const row = await findAccessibleProjectRow(pool, userId, projectId);
+  const data = await getProjectData(store, projectStorageKey(row.user_id, row.id));
+  return { ...toSummary(row), role: roleFor(row, userId), data };
 }
 
 export interface ProjectChanges {
@@ -170,21 +209,29 @@ export interface ProjectChanges {
   data?: unknown;
 }
 
+/**
+ * Updates a project's name/data. The caller may be the owner or a
+ * collaborator - either way, quota is charged against the project's owner
+ * (whoever's plan the storage counts against), not the caller, so `quota`
+ * is resolved lazily via `getQuota(ownerId)` once the owner is known, rather
+ * than being looked up for the caller before this is even called.
+ */
 export async function updateProject(
   pool: Pool,
   store: ObjectStore,
   userId: string,
   projectId: string,
   changes: ProjectChanges,
-  quota: PlanQuota,
+  getQuota: (ownerId: string) => Promise<PlanQuota>,
 ): Promise<Project> {
-  const row = await findOwnedProjectRow(pool, userId, projectId);
+  const row = await findAccessibleProjectRow(pool, userId, projectId);
   if (changes.name !== undefined) {
     validateName(changes.name);
   }
   if (changes.data !== undefined) {
     const dataBytes = Buffer.byteLength(JSON.stringify(changes.data), "utf-8");
-    await assertWithinQuota(pool, userId, quota, dataBytes, row.id);
+    const quota = await getQuota(row.user_id);
+    await assertWithinQuota(pool, row.user_id, quota, dataBytes, row.id);
   }
 
   const { rows } = await pool.query<ProjectRow>(
@@ -193,13 +240,13 @@ export async function updateProject(
   );
   const updated = rows[0]!;
 
-  const key = projectStorageKey(userId, row.id);
+  const key = projectStorageKey(row.user_id, row.id);
   if (changes.data !== undefined) {
     const size = await putProjectData(store, key, changes.data);
     await pool.query("UPDATE projects SET data_size_bytes = $1 WHERE id = $2", [size, row.id]);
   }
   const data = changes.data !== undefined ? changes.data : await getProjectData(store, key);
-  return { ...toSummary(updated), data };
+  return { ...toSummary(updated), role: roleFor(updated, userId), data };
 }
 
 export async function deleteProject(
@@ -233,8 +280,8 @@ export async function saveThumbnail(
   if (body.length === 0) {
     throw new InvalidProjectInputError("Thumbnail body is empty");
   }
-  const row = await findOwnedProjectRow(pool, userId, projectId);
-  await putProjectThumbnail(store, projectThumbnailKey(userId, row.id), body, contentType);
+  const row = await findAccessibleProjectRow(pool, userId, projectId);
+  await putProjectThumbnail(store, projectThumbnailKey(row.user_id, row.id), body, contentType);
   await pool.query("UPDATE projects SET has_thumbnail = true WHERE id = $1", [row.id]);
 }
 
@@ -244,11 +291,11 @@ export async function getThumbnail(
   userId: string,
   projectId: string,
 ): Promise<{ body: Buffer; contentType: string }> {
-  const row = await findOwnedProjectRow(pool, userId, projectId);
+  const row = await findAccessibleProjectRow(pool, userId, projectId);
   if (!row.has_thumbnail) {
     throw new ThumbnailNotFoundError(`No thumbnail for project "${projectId}"`);
   }
-  return getProjectThumbnail(store, projectThumbnailKey(userId, row.id));
+  return getProjectThumbnail(store, projectThumbnailKey(row.user_id, row.id));
 }
 
 /** Removes a project's thumbnail if it has one - a no-op otherwise, matching revokeShareLink's idempotence. */
@@ -258,9 +305,9 @@ export async function deleteThumbnail(
   userId: string,
   projectId: string,
 ): Promise<void> {
-  const row = await findOwnedProjectRow(pool, userId, projectId);
+  const row = await findAccessibleProjectRow(pool, userId, projectId);
   if (!row.has_thumbnail) return;
-  await deleteProjectData(store, projectThumbnailKey(userId, row.id));
+  await deleteProjectData(store, projectThumbnailKey(row.user_id, row.id));
   await pool.query("UPDATE projects SET has_thumbnail = false WHERE id = $1", [row.id]);
 }
 

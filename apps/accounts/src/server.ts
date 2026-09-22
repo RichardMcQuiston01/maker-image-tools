@@ -39,6 +39,7 @@ import {
   authenticate,
   createUser,
   EmailAlreadyRegisteredError,
+  findUserByEmail,
   findUserById,
   InvalidCredentialsFormatError,
   InvalidRoleError,
@@ -349,6 +350,30 @@ export function createServer(pool: Pool = createPool()) {
           const webAppUrl = requireOAuthEnv("WEB_APP_URL").replace(/\/$/, "");
           await sendVerificationEmail(pool, validated.id, `${webAppUrl}/#/verify-email`);
           sendJson(res, 202, { message: "Verification email sent." });
+          return;
+        }
+
+        if (req.method === "GET" && pathname === "/users/by-email") {
+          const token = bearerToken(req);
+          if (!token) {
+            sendJson(res, 401, { error: "Missing bearer token" });
+            return;
+          }
+          const validated = await validateSession(pool, token);
+          if (!validated) {
+            sendJson(res, 401, { error: "Invalid or expired session" });
+            return;
+          }
+          const email = url.searchParams.get("email");
+          if (!email) {
+            throw new Error('"email" query parameter is required');
+          }
+          const found = await findUserByEmail(pool, email);
+          if (!found) {
+            sendJson(res, 404, { error: "Not found" });
+            return;
+          }
+          sendJson(res, 200, { id: found.id });
           return;
         }
 

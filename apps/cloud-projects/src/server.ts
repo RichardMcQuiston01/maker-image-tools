@@ -6,7 +6,14 @@ import {
 import type { Pool } from "pg";
 import { AccountsConfigError, SessionVerificationError, verifySession } from "./accountsAuth.js";
 import { BillingConfigError, BillingVerificationError, getPlanTier } from "./billingClient.js";
+import {
+  addCollaborator,
+  CannotCollaborateWithSelfError,
+  listCollaborators,
+  removeCollaborator,
+} from "./collaborators.js";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
+import { publish, subscribe, unsubscribe } from "./liveUpdates.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import {
   createProject,
@@ -19,6 +26,7 @@ import {
   getThumbnail,
   InvalidProjectInputError,
   listProjects,
+  NotProjectOwnerError,
   ProjectNotFoundError,
   QuotaExceededError,
   revokeShareLink,
@@ -134,9 +142,11 @@ function errorStatus(err: unknown): number {
     err instanceof BillingVerificationError
   )
     return 500;
-  if (err instanceof InvalidProjectInputError) return 400;
+  if (err instanceof InvalidProjectInputError || err instanceof CannotCollaborateWithSelfError)
+    return 400;
   if (err instanceof ProjectNotFoundError) return 404;
   if (err instanceof ThumbnailNotFoundError) return 404;
+  if (err instanceof NotProjectOwnerError) return 403;
   if (err instanceof QuotaExceededError) return 402;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
@@ -154,6 +164,9 @@ function errorStatus(err: unknown): number {
 const PROJECT_ID_RE = /^\/projects\/([^/]+)$/;
 const SHARE_RE = /^\/projects\/([^/]+)\/share$/;
 const THUMBNAIL_RE = /^\/projects\/([^/]+)\/thumbnail$/;
+const COLLABORATORS_RE = /^\/projects\/([^/]+)\/collaborators$/;
+const COLLABORATOR_ID_RE = /^\/projects\/([^/]+)\/collaborators\/([^/]+)$/;
+const LIVE_RE = /^\/projects\/([^/]+)\/live$/;
 const SHARED_RE = /^\/shared\/([^/]+)$/;
 const SHARED_THUMBNAIL_RE = /^\/shared\/([^/]+)\/thumbnail$/;
 
@@ -244,6 +257,87 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
           }
         }
 
+        const collaboratorsMatch = pathname.match(COLLABORATORS_RE);
+        if (collaboratorsMatch) {
+          const projectId = collaboratorsMatch[1]!;
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
+
+          if (req.method === "GET") {
+            const collaborators = await listCollaborators(pool, userId, projectId);
+            sendJson(res, 200, { collaborators });
+            return;
+          }
+
+          if (req.method === "POST") {
+            const body = await parseJsonBody(req);
+            const collaborators = await addCollaborator(
+              pool,
+              userId,
+              projectId,
+              requireString(body, "userId"),
+            );
+            publish(projectId, { type: "collaborators", collaborators });
+            sendJson(res, 200, { collaborators });
+            return;
+          }
+        }
+
+        const collaboratorIdMatch = pathname.match(COLLABORATOR_ID_RE);
+        if (collaboratorIdMatch && req.method === "DELETE") {
+          const projectId = collaboratorIdMatch[1]!;
+          const collaboratorUserId = collaboratorIdMatch[2]!;
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
+          const collaborators = await removeCollaborator(
+            pool,
+            userId,
+            projectId,
+            collaboratorUserId,
+          );
+          publish(projectId, { type: "collaborators", collaborators });
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        const liveMatch = pathname.match(LIVE_RE);
+        if (liveMatch && req.method === "GET") {
+          const projectId = liveMatch[1]!;
+          const token = url.searchParams.get("token");
+          if (!token) {
+            sendJson(res, 401, { error: "Missing token query parameter" });
+            return;
+          }
+          const userId = await verifySession(token);
+          if (!userId) {
+            sendJson(res, 401, { error: "Invalid or expired session" });
+            return;
+          }
+          // Confirms access (owner or collaborator) and gives us the current
+          // state to send as this stream's first message, before switching
+          // the response over to SSE below - a ProjectNotFoundError here
+          // still gets a normal 404 JSON response via the outer .catch.
+          const project = await getProject(pool, store, userId, projectId);
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          });
+          res.write(`data: ${JSON.stringify({ type: "project", project })}\n\n`);
+          subscribe(projectId, res);
+          // Keeps intermediary proxies/load balancers from timing out an
+          // idle connection; unref'd so it never keeps the process (or a
+          // test's event loop) alive on its own.
+          const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 25_000);
+          heartbeat.unref();
+          req.on("close", () => {
+            clearInterval(heartbeat);
+            unsubscribe(projectId, res);
+          });
+          return;
+        }
+
         const sharedThumbnailMatch = pathname.match(SHARED_THUMBNAIL_RE);
         if (sharedThumbnailMatch && req.method === "GET") {
           const thumbnail = await getSharedThumbnail(pool, store, sharedThumbnailMatch[1]!);
@@ -274,15 +368,15 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
             const userId = await requireAuthenticatedUserId(req, res);
             if (!userId) return;
             const body = await parseJsonBody(req);
-            const quota = quotaForPlanTier(await getPlanTier(userId));
             const project = await updateProject(
               pool,
               store,
               userId,
               projectId,
               { name: optionalString(body, "name"), data: body.data },
-              quota,
+              (ownerId) => getPlanTier(ownerId).then(quotaForPlanTier),
             );
+            publish(projectId, { type: "project", project });
             sendJson(res, 200, { project });
             return;
           }
@@ -291,6 +385,7 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
             const userId = await requireAuthenticatedUserId(req, res);
             if (!userId) return;
             await deleteProject(pool, store, userId, projectId);
+            publish(projectId, { type: "deleted" });
             res.writeHead(204);
             res.end();
             return;
