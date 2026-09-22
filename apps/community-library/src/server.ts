@@ -19,7 +19,13 @@ import {
 } from "./listings.js";
 import { AccountsConfigError, isModerator, ModeratorVerificationError } from "./moderatorAuth.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
-import { InvalidRatingInputError, listRatings, rateListing } from "./ratings.js";
+import {
+  InvalidRatingInputError,
+  listRatings,
+  RatingRateLimitedError,
+  rateListing,
+  SelfRatingNotAllowedError,
+} from "./ratings.js";
 
 /** Thrown when a caller-supplied reviewerId doesn't belong to a moderator. */
 export class NotAModeratorError extends Error {}
@@ -119,9 +125,10 @@ function errorStatus(err: unknown): number {
   )
     return 500;
   if (err instanceof InvalidListingInputError || err instanceof InvalidRatingInputError) return 400;
-  if (err instanceof NotAModeratorError) return 403;
+  if (err instanceof NotAModeratorError || err instanceof SelfRatingNotAllowedError) return 403;
   if (err instanceof ListingNotFoundError) return 404;
   if (err instanceof ListingNotPendingError) return 409;
+  if (err instanceof RatingRateLimitedError) return 429;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
   if (
