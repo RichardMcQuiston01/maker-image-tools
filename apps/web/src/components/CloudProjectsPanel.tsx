@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { VectorDocument } from "@maker/core-vector";
 import { useAuth } from "../hooks/useAuth";
+import { ACCOUNTS_URL } from "../lib/accountsUrl";
 import { CLOUD_PROJECTS_URL } from "../lib/cloudProjectsUrl";
 import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
 import { renderThumbnail } from "../lib/renderThumbnail";
@@ -11,7 +12,21 @@ interface ProjectSummary {
   createdAt: string;
   updatedAt: string;
   hasThumbnail: boolean;
+  /** The signed-in user's relationship to this project. Determines whether Delete/Share/collaborator
+   * management are shown - only the owner gets those, a collaborator only gets Load and (read-only)
+   * the collaborator list. */
+  role?: "owner" | "collaborator";
 }
+
+interface Collaborator {
+  userId: string;
+  addedAt: string;
+}
+
+type LiveEvent =
+  | { type: "project"; project: { data: VectorDocument } }
+  | { type: "deleted" }
+  | { type: "collaborators"; collaborators: Collaborator[] };
 
 /**
  * Fetches a project's thumbnail with the caller's bearer token (an <img
@@ -100,6 +115,19 @@ export function CloudProjectsPanel({
   const [publishTags, setPublishTags] = useState("");
   const [publishStatus, setPublishStatus] = useState<"idle" | "submitting" | "submitted">("idle");
 
+  const [openCollaboratorsFor, setOpenCollaboratorsFor] = useState<string | null>(null);
+  const [collaboratorsByProject, setCollaboratorsByProject] = useState<
+    Record<string, Collaborator[]>
+  >({});
+  const [collaboratorEmailInput, setCollaboratorEmailInput] = useState<Record<string, string>>({});
+  const [collaboratorBusy, setCollaboratorBusy] = useState(false);
+
+  // Which project (if any) is currently loaded into the editor - drives the
+  // "someone else changed this" live banner below, which only makes sense
+  // for the project actually open right now.
+  const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+  const [liveNotice, setLiveNotice] = useState<"updated" | "deleted" | null>(null);
+
   const refreshProjects = useCallback(async (sessionToken: string) => {
     try {
       const response = await fetch(`${CLOUD_PROJECTS_URL}/projects`, {
@@ -181,6 +209,8 @@ export function CloudProjectsPanel({
         }
         const body = (await response.json()) as { project: { data: VectorDocument } };
         onLoadDocument(body.project.data);
+        setLoadedProjectId(id);
+        setLiveNotice(null);
       } catch (err) {
         setError(
           err instanceof Error
@@ -192,6 +222,142 @@ export function CloudProjectsPanel({
       }
     },
     [token, onLoadDocument],
+  );
+
+  // Subscribes to live updates for whichever project is currently loaded in
+  // the editor, so a collaborator's save elsewhere surfaces as a banner
+  // instead of silently going stale. Doesn't touch the open editor's
+  // content itself - reloading is the user's call (see handleReloadLive).
+  const isFirstLiveMessage = useRef(true);
+  useEffect(() => {
+    if (!loadedProjectId || !token) return;
+    isFirstLiveMessage.current = true;
+    const source = new EventSource(
+      `${CLOUD_PROJECTS_URL}/projects/${loadedProjectId}/live?token=${encodeURIComponent(token)}`,
+    );
+    source.onmessage = (event) => {
+      // The stream's first message is just this project's current state,
+      // sent immediately on connect - not a change to react to.
+      if (isFirstLiveMessage.current) {
+        isFirstLiveMessage.current = false;
+        return;
+      }
+      const parsed = JSON.parse(event.data) as LiveEvent;
+      if (parsed.type === "project") {
+        setLiveNotice("updated");
+      } else if (parsed.type === "deleted") {
+        setLiveNotice("deleted");
+      } else if (parsed.type === "collaborators") {
+        setCollaboratorsByProject((current) => ({
+          ...current,
+          [loadedProjectId]: parsed.collaborators,
+        }));
+      }
+    };
+    return () => source.close();
+  }, [loadedProjectId, token]);
+
+  const handleReloadLive = useCallback(() => {
+    if (!loadedProjectId) return;
+    setLiveNotice(null);
+    void handleLoad(loadedProjectId);
+  }, [loadedProjectId, handleLoad]);
+
+  const handleDismissLiveNotice = useCallback(() => setLiveNotice(null), []);
+
+  const handleToggleCollaborators = useCallback(
+    async (id: string) => {
+      const opening = openCollaboratorsFor !== id;
+      setOpenCollaboratorsFor(opening ? id : null);
+      if (!opening || !token || collaboratorsByProject[id]) return;
+      try {
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}/collaborators`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) return;
+        const body = (await response.json()) as { collaborators: Collaborator[] };
+        setCollaboratorsByProject((current) => ({ ...current, [id]: body.collaborators }));
+      } catch {
+        // Best-effort - the panel just stays empty/loading if this fails.
+      }
+    },
+    [openCollaboratorsFor, token, collaboratorsByProject],
+  );
+
+  const handleAddCollaborator = useCallback(
+    async (id: string) => {
+      const email = collaboratorEmailInput[id]?.trim();
+      if (!token || !email) return;
+      try {
+        setCollaboratorBusy(true);
+        setError(null);
+        const lookup = await fetch(
+          `${ACCOUNTS_URL}/users/by-email?email=${encodeURIComponent(email)}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!lookup.ok) {
+          setError(
+            lookup.status === 404
+              ? `No account with email "${email}"`
+              : await readErrorMessage(lookup, "Couldn't look up that email"),
+          );
+          return;
+        }
+        const { id: collaboratorUserId } = (await lookup.json()) as { id: string };
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}/collaborators`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ userId: collaboratorUserId }),
+        });
+        if (!response.ok) {
+          setError(await readErrorMessage(response, "Couldn't add collaborator"));
+          return;
+        }
+        const body = (await response.json()) as { collaborators: Collaborator[] };
+        setCollaboratorsByProject((current) => ({ ...current, [id]: body.collaborators }));
+        setCollaboratorEmailInput((current) => ({ ...current, [id]: "" }));
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/accounts or @maker/cloud-projects dev server running?)`
+            : "Failed to add collaborator",
+        );
+      } finally {
+        setCollaboratorBusy(false);
+      }
+    },
+    [token, collaboratorEmailInput],
+  );
+
+  const handleRemoveCollaborator = useCallback(
+    async (id: string, collaboratorUserId: string) => {
+      if (!token) return;
+      try {
+        setCollaboratorBusy(true);
+        setError(null);
+        const response = await fetch(
+          `${CLOUD_PROJECTS_URL}/projects/${id}/collaborators/${collaboratorUserId}`,
+          { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok && response.status !== 204) {
+          setError(await readErrorMessage(response, "Couldn't remove collaborator"));
+          return;
+        }
+        setCollaboratorsByProject((current) => ({
+          ...current,
+          [id]: (current[id] ?? []).filter((c) => c.userId !== collaboratorUserId),
+        }));
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/cloud-projects dev server running?)`
+            : "Failed to remove collaborator",
+        );
+      } finally {
+        setCollaboratorBusy(false);
+      }
+    },
+    [token],
   );
 
   const handleDelete = useCallback(
@@ -207,6 +373,10 @@ export function CloudProjectsPanel({
         if (!response.ok && response.status !== 204) {
           throw new Error(`Delete failed with ${response.status}`);
         }
+        if (loadedProjectId === id) {
+          setLoadedProjectId(null);
+          setLiveNotice(null);
+        }
         await refreshProjects(token);
       } catch (err) {
         setError(
@@ -218,7 +388,7 @@ export function CloudProjectsPanel({
         setBusy(false);
       }
     },
-    [token, refreshProjects],
+    [token, refreshProjects, loadedProjectId],
   );
 
   const handleShare = useCallback(
@@ -346,6 +516,21 @@ export function CloudProjectsPanel({
           {error}
         </p>
       )}
+      {liveNotice && (
+        <p className="ai-panel__hint cloud-projects-panel__live-notice">
+          {liveNotice === "deleted"
+            ? "This project was deleted by its owner."
+            : "This project was updated by a collaborator."}{" "}
+          {liveNotice === "updated" && (
+            <button type="button" onClick={handleReloadLive}>
+              Reload
+            </button>
+          )}
+          <button type="button" onClick={handleDismissLiveNotice}>
+            Dismiss
+          </button>
+        </p>
+      )}
       <div className="ai-panel__actions">
         <input
           type="text"
@@ -368,20 +553,89 @@ export function CloudProjectsPanel({
                 <ProjectThumbnail projectId={project.id} projectName={project.name} token={token} />
               )}
               <span>{project.name}</span>
+              {project.role === "collaborator" && (
+                <span className="ai-panel__hint">Shared with you</span>
+              )}
               <div className="ai-panel__actions">
                 <button type="button" disabled={busy} onClick={() => void handleLoad(project.id)}>
                   Load
                 </button>
-                <button type="button" disabled={busy} onClick={() => void handleShare(project.id)}>
-                  Share
-                </button>
-                <button type="button" disabled={busy} onClick={() => void handleDelete(project.id)}>
-                  Delete
-                </button>
+                {project.role !== "collaborator" && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleShare(project.id)}
+                    >
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleDelete(project.id)}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
                 <button type="button" disabled={busy} onClick={() => handleOpenPublish(project)}>
                   Publish to Library
                 </button>
+                <button type="button" onClick={() => void handleToggleCollaborators(project.id)}>
+                  {openCollaboratorsFor === project.id ? "Hide collaborators" : "Collaborators"}
+                </button>
               </div>
+              {openCollaboratorsFor === project.id && (
+                <div className="cloud-projects-panel__collaborators">
+                  {(collaboratorsByProject[project.id] ?? []).length === 0 ? (
+                    <p className="ai-panel__hint">No collaborators yet.</p>
+                  ) : (
+                    <ul>
+                      {(collaboratorsByProject[project.id] ?? []).map((collaborator) => (
+                        <li key={collaborator.userId}>
+                          <span>{collaborator.userId}</span>
+                          {project.role !== "collaborator" && (
+                            <button
+                              type="button"
+                              disabled={collaboratorBusy}
+                              onClick={() =>
+                                void handleRemoveCollaborator(project.id, collaborator.userId)
+                              }
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {project.role !== "collaborator" && (
+                    <div className="ai-panel__actions">
+                      <input
+                        type="email"
+                        placeholder="Collaborator's email"
+                        value={collaboratorEmailInput[project.id] ?? ""}
+                        disabled={collaboratorBusy}
+                        onChange={(event) =>
+                          setCollaboratorEmailInput((current) => ({
+                            ...current,
+                            [project.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        disabled={
+                          collaboratorBusy || !(collaboratorEmailInput[project.id] ?? "").trim()
+                        }
+                        onClick={() => void handleAddCollaborator(project.id)}
+                      >
+                        Invite
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {publishOpenFor === project.id &&
                 (publishStatus === "submitted" ? (
                   <p className="ai-panel__hint">

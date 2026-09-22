@@ -25,10 +25,34 @@ const SIGNED_IN_USER = {
 
 const EMPTY_DOC: VectorDocument = createDocument();
 
+/** jsdom doesn't implement EventSource - a minimal fake standing in for the live-updates stream,
+ * with an `emit` helper tests use to simulate a server-sent message. */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  url: string;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  closed = false;
+
+  constructor(url: string) {
+    this.url = url;
+    FakeEventSource.instances.push(this);
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  emit(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) });
+  }
+}
+
 describe("CloudProjectsPanel", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("EventSource", FakeEventSource);
+    FakeEventSource.instances = [];
     vi.mocked(renderThumbnail).mockReset().mockResolvedValue(undefined);
     // jsdom doesn't implement these - ProjectThumbnail's blob-URL display
     // needs them, and a stub here is harmless for every other test (none
@@ -413,5 +437,208 @@ describe("CloudProjectsPanel", () => {
       data: projectData,
     });
     expect(await screen.findByText(/awaiting moderation/)).toBeInTheDocument();
+  });
+
+  it("hides Share/Delete for a project shared as a collaborator", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Shared With Me",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            role: "collaborator",
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    await screen.findByText("Shared With Me");
+
+    expect(screen.getByText("Shared with you")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Share" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("lists, adds, and removes collaborators for an owned project", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Mine",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            role: "owner",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { collaborators: [] }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Collaborators" }));
+    expect(await screen.findByText("No collaborators yet.")).toBeInTheDocument();
+
+    const COLLABORATOR_ID = "22222222-2222-2222-2222-222222222222";
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: COLLABORATOR_ID }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        collaborators: [{ userId: COLLABORATOR_ID, addedAt: "2026-01-02T00:00:00Z" }],
+      }),
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Collaborator's email"), {
+      target: { value: "bob@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Invite" }));
+
+    expect(await screen.findByText(COLLABORATOR_ID)).toBeInTheDocument();
+    const lookupCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/users/by-email"),
+    );
+    expect(String(lookupCall![0])).toContain("email=bob%40example.com");
+    expect((lookupCall![1]?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer test-token",
+    );
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.queryByText(COLLABORATOR_ID)).not.toBeInTheDocument());
+  });
+
+  it("shows an error when inviting an email with no matching account", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Mine",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            role: "owner",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { collaborators: [] }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "Not found" }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Collaborators" }));
+    await screen.findByText("No collaborators yet.");
+    fireEvent.change(screen.getByPlaceholderText("Collaborator's email"), {
+      target: { value: "nobody@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Invite" }));
+
+    expect(
+      await screen.findByText('No account with email "nobody@example.com"'),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a live-update banner when the loaded project changes elsewhere, and Reload re-fetches it", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Mine",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: { layers: [] } } }));
+
+    const onLoadDocument = vi.fn();
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={onLoadDocument} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Load" }));
+    await waitFor(() => expect(onLoadDocument).toHaveBeenCalledTimes(1));
+
+    const source = FakeEventSource.instances.at(-1)!;
+    expect(source.url).toContain("/projects/p1/live?token=test-token");
+    source.emit({ type: "project", project: { data: {} } }); // initial state - not a change
+    source.emit({ type: "project", project: { data: { layers: ["x"] } } }); // a real change
+
+    expect(await screen.findByText(/updated by a collaborator/)).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { project: { data: { layers: ["reloaded"] } } }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+    await waitFor(() => expect(onLoadDocument).toHaveBeenCalledTimes(2));
+    expect(onLoadDocument).toHaveBeenLastCalledWith({ layers: ["reloaded"] });
+    expect(screen.queryByText(/updated by a collaborator/)).not.toBeInTheDocument();
+  });
+
+  it("shows a dismissible notice when the loaded project is deleted elsewhere", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Mine",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: { layers: [] } } }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Load" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit({ type: "project", project: { data: {} } }); // initial state
+    source.emit({ type: "deleted" });
+
+    expect(await screen.findByText(/This project was deleted/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reload" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/This project was deleted/)).not.toBeInTheDocument();
   });
 });

@@ -65,40 +65,102 @@ export S3_SECRET_ACCESS_KEY=makermaker
 
 ## API
 
-| Route                            | Body / Query         | Auth                            | Response                                                                                                                                               |
-| -------------------------------- | -------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST /projects`                 | `{ name, data }`     | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                      |
-| `GET /projects`                  | —                    | `Authorization: Bearer <token>` | `200 { projects }` — summaries only (no `data`), newest-updated first / `401`                                                                          |
-| `GET /projects/:id`              | —                    | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or not owned by the caller / `401`                                                              |
-| `PUT /projects/:id`              | `{ name?, data? }`   | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the caller over their plan quota |
-| `DELETE /projects/:id`           | —                    | `Authorization: Bearer <token>` | `204` / `404` / `401`                                                                                                                                  |
-| `POST /projects/:id/share`       | —                    | `Authorization: Bearer <token>` | `200 { token }` — creates a share token if the project doesn't already have one / `404` / `401`                                                        |
-| `DELETE /projects/:id/share`     | —                    | `Authorization: Bearer <token>` | `204` — revokes the project's share token / `404` / `401`                                                                                              |
-| `PUT /projects/:id/thumbnail`    | raw `image/png` body | `Authorization: Bearer <token>` | `204` / `400` for a non-`image/png` body / `404` / `401`                                                                                               |
-| `GET /projects/:id/thumbnail`    | —                    | `Authorization: Bearer <token>` | `200` raw `image/png` body / `404` if missing or not owned by the caller / `401`                                                                       |
-| `DELETE /projects/:id/thumbnail` | —                    | `Authorization: Bearer <token>` | `204` — removes the thumbnail if there is one (idempotent) / `404` / `401`                                                                             |
-| `GET /shared/:token`             | —                    | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                   |
-| `GET /shared/:token/thumbnail`   | —                    | —                               | `200` raw `image/png` body (no auth) / `404` if the token is unknown/revoked or has no thumbnail                                                       |
+| Route                                    | Body / Query         | Auth                            | Response                                                                                                                                                 |
+| ---------------------------------------- | -------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /projects`                         | `{ name, data }`     | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                        |
+| `GET /projects`                          | —                    | `Authorization: Bearer <token>` | `200 { projects }` — owned and collaborated-on, summaries only (no `data`), newest-updated first / `401`                                                 |
+| `GET /projects/:id`                      | —                    | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or the caller is neither its owner nor a collaborator / `401`                                     |
+| `PUT /projects/:id`                      | `{ name?, data? }`   | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the project over its owner's quota |
+| `DELETE /projects/:id`                   | —                    | `Authorization: Bearer <token>` | `204` — owner-only / `403` if the caller is a collaborator, not the owner / `404` / `401`                                                                |
+| `POST /projects/:id/share`               | —                    | `Authorization: Bearer <token>` | `200 { token }` — owner-only, creates a share token if the project doesn't already have one / `403` / `404` / `401`                                      |
+| `DELETE /projects/:id/share`             | —                    | `Authorization: Bearer <token>` | `204` — owner-only, revokes the project's share token / `403` / `404` / `401`                                                                            |
+| `PUT /projects/:id/thumbnail`            | raw `image/png` body | `Authorization: Bearer <token>` | `204` / `400` for a non-`image/png` body / `404` / `401`                                                                                                 |
+| `GET /projects/:id/thumbnail`            | —                    | `Authorization: Bearer <token>` | `200` raw `image/png` body / `404` if missing or inaccessible / `401`                                                                                    |
+| `DELETE /projects/:id/thumbnail`         | —                    | `Authorization: Bearer <token>` | `204` — removes the thumbnail if there is one (idempotent) / `404` / `401`                                                                               |
+| `GET /projects/:id/collaborators`        | —                    | `Authorization: Bearer <token>` | `200 { collaborators }` / `404` if the caller has no access to the project / `401`                                                                       |
+| `POST /projects/:id/collaborators`       | `{ userId }`         | `Authorization: Bearer <token>` | `200 { collaborators }` — owner-only, idempotent / `400` if `userId` is the project's own owner / `403` / `404` / `401`                                  |
+| `DELETE /projects/:id/collaborators/:id` | —                    | `Authorization: Bearer <token>` | `204` — owner-only, idempotent / `403` / `404` / `401`                                                                                                   |
+| `GET /projects/:id/live`                 | `?token=<token>`     | via `token` query parameter     | `200`, a `text/event-stream` of live updates for as long as the connection stays open / `404` if inaccessible / `401` missing/invalid/expired token      |
+| `GET /shared/:token`                     | —                    | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                     |
+| `GET /shared/:token/thumbnail`           | —                    | —                               | `200` raw `image/png` body (no auth) / `404` if the token is unknown/revoked or has no thumbnail                                                         |
 
-`project` is `{ id, name, createdAt, updatedAt, hasThumbnail, data }`, where `data` is an arbitrary
-JSON-serializable payload — `apps/web` is expected to pass its `VectorDocument` (or similar) here
-verbatim; this service never inspects its shape. `hasThumbnail` tells a caller whether it's worth
-fetching `GET .../thumbnail` at all, instead of issuing a request that's guaranteed to `404`.
+`project` is `{ id, name, createdAt, updatedAt, hasThumbnail, data, role }`, where `data` is an
+arbitrary JSON-serializable payload — `apps/web` is expected to pass its `VectorDocument` (or
+similar) here verbatim; this service never inspects its shape. `hasThumbnail` tells a caller
+whether it's worth fetching `GET .../thumbnail` at all, instead of issuing a request that's
+guaranteed to `404`. `role` is `"owner"` or `"collaborator"` (see "Collaborators" below) - omitted
+from `GET /shared/:token`'s response, since an anonymous share-link viewer has neither
+relationship to the project.
 
 ## Access control
 
 Every project-scoped route resolves the caller's `userId` from their bearer token, never from a
 client-supplied value - `accountsAuth.ts`'s `verifySession(token)` calls `@maker/accounts`'s
 `GET /me` and returns the id of whichever user that token belongs to (or `undefined` for a
-missing/invalid/expired one, which the route maps to `401`). `projects.ts`'s existing
-`WHERE id = $1 AND user_id = $2` ownership checks then do the rest: a valid token for user A can
-never read, update, delete, or (re)share a project belonging to user B - it fails with the exact
-same `404` a genuinely unknown project id would, rather than leaking whether the id exists. This
-mirrors `@maker/community-library`/`@maker/material-db`'s `moderatorAuth.ts` (which verifies a
-moderator role against `@maker/accounts` the same way), just verifying identity instead of a role.
+missing/invalid/expired one, which the route maps to `401`). `projects.ts`'s
+`findAccessibleProjectRow` then does the rest: it matches a project the caller either owns
+(`user_id = $2`) or is a collaborator on (a row in `project_collaborators`), and throws
+`ProjectNotFoundError` (`404`) otherwise - a valid token for user A can never read, edit, or
+discover the existence of a project neither owned by nor shared with them, the exact same `404` a
+genuinely unknown project id would produce. This mirrors
+`@maker/community-library`/`@maker/material-db`'s `moderatorAuth.ts` (which verifies a moderator
+role against `@maker/accounts` the same way), just verifying identity instead of a role.
+
+A second tier, `findOwnedProjectRow`, additionally requires the caller to be the project's
+_owner_ - used by the delete/share/collaborator-management routes (see "Collaborators" below).
+Reaching a project at all but failing this stricter check throws `NotProjectOwnerError` (`403`)
+instead of `404`: a collaborator already knows the project exists (they can view and edit it), so
+a `404` there would just be a lie the way it correctly isn't for a total stranger.
 
 `GET /shared/:token` is the one deliberately unauthenticated route - a share link's whole purpose is
 letting anyone with the link view the project, so requiring a session there would defeat it.
+
+## Collaborators
+
+A project has exactly one owner (whoever created it - the `user_id` column always means this) and
+any number of collaborators (rows in `project_collaborators`, a plain `(project_id, user_id)` pair
+with no cross-service foreign key - `user_id` is just `@maker/accounts`'s opaque UUID, the same
+trust model `projects.user_id` itself already uses). The split:
+
+- **Owner**: everything a collaborator can do, plus delete the project, create/revoke its share
+  link, and manage its collaborator list (`POST`/`DELETE .../collaborators`).
+- **Collaborator**: view and edit the project's `name`/`data` (`GET`/`PUT /projects/:id`) and its
+  thumbnail, exactly like the owner - but nothing admin-shaped. A collaborator's edit is charged
+  against the _owner's_ storage quota (`updateProject`'s `getQuota` callback resolves the plan tier
+  for `row.user_id`, not the caller), since the data is stored under the owner's account either way.
+
+`POST /projects/:id/collaborators` takes a `userId`, not an email - `apps/web`'s "invite a
+collaborator" UI resolves an email to a user id first via `@maker/accounts`'s
+`GET /users/by-email`, then calls this with the result. Adding an already-added collaborator, or
+removing one who isn't currently a collaborator, is a no-op (not a `409`/`404`) - there's no
+meaningful "conflict" in either direction. A project's owner can't be added as their own
+collaborator (`400`) - they already have full access, and the distinction would stop meaning
+anything.
+
+`GET /projects`/`GET /projects/:id`/`PUT /projects/:id` all include a `role` (`"owner"` or
+`"collaborator"`) in their response, telling `apps/web` which controls to show for a given project
+without it having to separately track "is this my project" itself.
+
+## Live updates
+
+`GET /projects/:id/live` is a `text/event-stream` (Server-Sent Events) connection: on connect it
+immediately sends the project's current state as one `{ "type": "project", "project": {...} }`
+message, then a further message of the same shape every time _anyone_ (owner or any collaborator)
+successfully `PUT`s the project, plus `{ "type": "deleted" }` if it's deleted and
+`{ "type": "collaborators", "collaborators": [...] }` when the collaborator list changes. This is
+how `apps/web` notices a collaborator's save without polling - see its `CloudProjectsPanel` for how
+it surfaces this as a dismissible "updated elsewhere, reload?" banner rather than silently
+overwriting whatever's open in the editor.
+
+This is deliberately last-write-wins broadcast, not operational-transform/CRDT-style merging -
+concurrent edits to the same project still just overwrite each other on `PUT`, the same as before
+this feature existed; live updates only make that visible instead of silent. `EventSource` can't
+set custom headers, so auth here is a `?token=` query parameter (validated with the same
+`verifySession` as everywhere else) rather than an `Authorization` header. `liveUpdates.ts`'s
+subscriber registry is in-memory and per-process (`Map<projectId, Set<ServerResponse>>`) - fine
+for this service's single-dev-server-instance scope like every other `apps/*` service in this
+repo, but a multi-replica production deployment would need a real pub/sub backend (e.g. Redis) to
+fan a write on one instance out to viewers connected to another.
 
 ## Storage quotas
 
@@ -136,7 +198,16 @@ included.
 
 ## What's not here yet
 
-- **Collaborative editing** — this is single-writer save/load, not realtime multi-user sync.
+- **Real-time collaborative editing (OT/CRDT)** — "Collaborators" and "Live updates" above cover
+  shared write access and a last-write-wins broadcast of each save, but two people editing the same
+  project at the same moment still just overwrite each other on `PUT`; there's no operational
+  transform/CRDT merging of concurrent, in-flight changes the way e.g. Google Docs has.
+- **Presence** ("who else is viewing this right now") — the live-updates stream broadcasts project
+  changes, not who's currently connected to it.
+- **Multi-instance live updates** — see "Live updates" above; `liveUpdates.ts`'s subscriber registry
+  is per-process, so a deployment with more than one `apps/cloud-projects` instance behind a load
+  balancer would need a shared pub/sub backend for a save on one instance to reach a viewer
+  connected to another.
 
 ## Testing note
 

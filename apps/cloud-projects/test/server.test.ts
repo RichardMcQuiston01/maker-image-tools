@@ -377,4 +377,180 @@ describe("cloud-projects server", () => {
       expect(response.status).toBe(404);
     });
   });
+
+  describe("collaborators", () => {
+    function addCollaborator(token: string, projectId: string, userId: string) {
+      return fetch(`${baseUrl}/projects/${projectId}/collaborators`, {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ userId }),
+      });
+    }
+
+    it("adds a collaborator, who can then see and edit the project", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+
+      const addResponse = await addCollaborator(TOKEN_1, created.project.id, USER_2);
+      expect(addResponse.status).toBe(200);
+      expect((await addResponse.json()).collaborators).toEqual([
+        { userId: USER_2, addedAt: expect.any(String) },
+      ]);
+
+      const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+        headers: authHeaders(TOKEN_2),
+      });
+      expect(getResponse.status).toBe(200);
+      const got = await getResponse.json();
+      expect(got.project.role).toBe("collaborator");
+
+      const putResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+        method: "PUT",
+        headers: authHeaders(TOKEN_2),
+        body: JSON.stringify({ data: { v: 2 } }),
+      });
+      expect(putResponse.status).toBe(200);
+      expect((await putResponse.json()).project.data).toEqual({ v: 2 });
+    });
+
+    it('reports role "owner" for the owner\'s own project via list/get', async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      expect(created.project.role).toBe("owner");
+
+      const listResponse = await fetch(`${baseUrl}/projects`, { headers: authHeaders(TOKEN_1) });
+      expect((await listResponse.json()).projects[0].role).toBe("owner");
+    });
+
+    it("removes a collaborator, revoking their access", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      await addCollaborator(TOKEN_1, created.project.id, USER_2);
+
+      const removeResponse = await fetch(
+        `${baseUrl}/projects/${created.project.id}/collaborators/${USER_2}`,
+        { method: "DELETE", headers: authHeaders(TOKEN_1) },
+      );
+      expect(removeResponse.status).toBe(204);
+
+      const getResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+        headers: authHeaders(TOKEN_2),
+      });
+      expect(getResponse.status).toBe(404);
+    });
+
+    it("rejects a collaborator (not the owner) adding another collaborator with 403", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      await addCollaborator(TOKEN_1, created.project.id, USER_2);
+
+      const collaboratorTriesToAdd = await addCollaborator(
+        TOKEN_2,
+        created.project.id,
+        "33333333-3333-3333-3333-333333333333",
+      );
+      expect(collaboratorTriesToAdd.status).toBe(403);
+    });
+
+    it("rejects a caller with no relation to the project listing its collaborators with 404", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      const response = await fetch(`${baseUrl}/projects/${created.project.id}/collaborators`, {
+        headers: authHeaders(TOKEN_2),
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it("rejects a caller adding the project owner as their own collaborator with 400", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      const response = await addCollaborator(TOKEN_1, created.project.id, USER_1);
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe("live updates (SSE)", () => {
+    async function connectLive(token: string, projectId: string) {
+      const response = await fetch(
+        `${baseUrl}/projects/${projectId}/live?token=${encodeURIComponent(token)}`,
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      return {
+        status: response.status,
+        async nextEvent(): Promise<unknown> {
+          while (!buffer.includes("\n\n")) {
+            const { value, done } = await reader.read();
+            if (done) throw new Error("SSE stream ended before an event arrived");
+            buffer += decoder.decode(value, { stream: true });
+          }
+          const frameEnd = buffer.indexOf("\n\n");
+          const frame = buffer.slice(0, frameEnd);
+          buffer = buffer.slice(frameEnd + 2);
+          const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
+          if (!dataLine) throw new Error(`No "data:" line in SSE frame: ${frame}`);
+          return JSON.parse(dataLine.slice("data: ".length));
+        },
+        close() {
+          void reader.cancel();
+        },
+      };
+    }
+
+    it("sends the current project immediately, then a broadcast on PUT", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      const live = await connectLive(TOKEN_1, created.project.id);
+      expect(live.status).toBe(200);
+      try {
+        const first = (await live.nextEvent()) as { type: string; project: { data: unknown } };
+        expect(first.type).toBe("project");
+        expect(first.project.data).toEqual({ v: 1 });
+
+        const putResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+          method: "PUT",
+          headers: authHeaders(TOKEN_1),
+          body: JSON.stringify({ data: { v: 2 } }),
+        });
+        expect(putResponse.status).toBe(200);
+
+        const second = (await live.nextEvent()) as { type: string; project: { data: unknown } };
+        expect(second.type).toBe("project");
+        expect(second.project.data).toEqual({ v: 2 });
+      } finally {
+        live.close();
+      }
+    });
+
+    it('broadcasts a "deleted" event to a collaborator watching when the owner deletes the project', async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      await fetch(`${baseUrl}/projects/${created.project.id}/collaborators`, {
+        method: "POST",
+        headers: authHeaders(TOKEN_1),
+        body: JSON.stringify({ userId: USER_2 }),
+      });
+
+      const live = await connectLive(TOKEN_2, created.project.id);
+      try {
+        await live.nextEvent(); // initial state
+
+        const deleteResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
+          method: "DELETE",
+          headers: authHeaders(TOKEN_1),
+        });
+        expect(deleteResponse.status).toBe(204);
+
+        const event = (await live.nextEvent()) as { type: string };
+        expect(event.type).toBe("deleted");
+      } finally {
+        live.close();
+      }
+    });
+
+    it("rejects a live connection with no token with 401, and no access with 404", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+
+      const noToken = await fetch(`${baseUrl}/projects/${created.project.id}/live`);
+      expect(noToken.status).toBe(401);
+
+      const noAccess = await fetch(
+        `${baseUrl}/projects/${created.project.id}/live?token=${TOKEN_2}`,
+      );
+      expect(noAccess.status).toBe(404);
+    });
+  });
 });
