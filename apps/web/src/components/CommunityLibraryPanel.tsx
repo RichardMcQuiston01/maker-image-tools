@@ -22,6 +22,17 @@ interface Rating {
   createdAt: string;
 }
 
+/** Reads a failed fetch response's `{ error }` body, falling back to a generic message with its status if the body isn't JSON. */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    if (typeof body.error === "string" && body.error.length > 0) return body.error;
+  } catch {
+    // Body wasn't JSON - fall through to the generic message below.
+  }
+  return `${fallback} with ${response.status}`;
+}
+
 interface CommunityLibraryPanelProps {
   document: VectorDocument;
   onLoadDocument: (doc: VectorDocument) => void;
@@ -141,7 +152,8 @@ export function CommunityLibraryPanel({
           body: JSON.stringify({ userId: user.id, stars, ...(comment ? { comment } : {}) }),
         });
         if (!response.ok) {
-          throw new Error(`Rating failed with ${response.status}`);
+          setError(await readErrorMessage(response, "Rating failed"));
+          return;
         }
         const body = (await response.json()) as { listing: ListingSummary };
         setResults((current) =>
@@ -279,7 +291,7 @@ export function CommunityLibraryPanel({
                 <button type="button" disabled={busy} onClick={() => void handleLoad(listing.id)}>
                   Load
                 </button>
-                {authStatus === "signed-in" && (
+                {authStatus === "signed-in" && user?.id !== listing.userId && (
                   <>
                     <input
                       type="number"

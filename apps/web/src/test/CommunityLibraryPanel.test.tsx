@@ -275,6 +275,76 @@ describe("CommunityLibraryPanel", () => {
     expect(screen.getByRole("button", { name: "Hide reviews" })).toBeInTheDocument();
   });
 
+  it("hides the Rate control for the signed-in user's own listing", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        listings: [
+          {
+            id: "mine",
+            userId: SIGNED_IN_USER.id,
+            title: "My Design",
+            description: null,
+            tags: [],
+            ratingAvg: null,
+            ratingCount: 0,
+          },
+          {
+            id: "theirs",
+            userId: OTHER_USER_ID,
+            title: "Their Design",
+            description: null,
+            tags: [],
+            ratingAvg: null,
+            ratingCount: 0,
+          },
+        ],
+      }),
+    );
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+
+    await screen.findByText("My Design");
+    expect(screen.getAllByRole("button", { name: "Rate" })).toHaveLength(1);
+  });
+
+  it("shows the server's error message when rating fails", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        listings: [
+          {
+            id: "l1",
+            userId: OTHER_USER_ID,
+            title: "Fox Keychain",
+            description: null,
+            tags: [],
+            ratingAvg: null,
+            ratingCount: 0,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(429, {
+        error: "Too many ratings submitted recently - try again in a few minutes",
+      }),
+    );
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Rate" }));
+
+    expect(
+      await screen.findByText("Too many ratings submitted recently - try again in a few minutes"),
+    ).toBeInTheDocument();
+  });
+
   it("shows a delete button only for the signed-in user's own listing", async () => {
     window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);

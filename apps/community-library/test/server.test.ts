@@ -200,6 +200,18 @@ describe("community-library server", () => {
     expect((await listResponse.json()).ratings).toHaveLength(1);
   });
 
+  it("rejects rating your own listing with 403", async () => {
+    const created = await (await publish()).json();
+    await approve(created.listing.id);
+
+    const response = await fetch(`${baseUrl}/listings/${created.listing.id}/ratings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: USER_1, stars: 5 }),
+    });
+    expect(response.status).toBe(403);
+  });
+
   it("rejects an out-of-range rating with 400", async () => {
     const created = await (await publish()).json();
     await approve(created.listing.id);

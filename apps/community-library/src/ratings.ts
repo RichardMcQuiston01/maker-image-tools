@@ -41,6 +41,23 @@ function toRating(row: RatingRow): Rating {
 /** Thrown for a caller-supplied `stars` outside 1-5. */
 export class InvalidRatingInputError extends Error {}
 
+/** Thrown when a listing's own submitter tries to rate it - rating your own listing to inflate its score is the obvious abuse case a same-user check closes. */
+export class SelfRatingNotAllowedError extends Error {}
+
+/** Thrown when a user has rated too many distinct listings too recently - see RATE_LIMIT_* below. */
+export class RatingRateLimitedError extends Error {}
+
+/**
+ * A user may touch at most this many *other* listings' ratings within
+ * RATE_LIMIT_WINDOW - re-rating a listing they've already rated inside the
+ * window never counts against this (see the `listing_id != $2` exclusion
+ * below), so this throttles how many listings a single identity can sway
+ * in a burst (brigading a set of listings up or down), without penalizing
+ * someone changing their mind about one rating repeatedly.
+ */
+const RATE_LIMIT_MAX_OTHER_LISTINGS = 20;
+const RATE_LIMIT_WINDOW = "10 minutes";
+
 async function recomputeListingAggregate(
   client: PoolClient,
   listingId: string,
@@ -81,8 +98,23 @@ export async function rateListing(
       `SELECT * FROM listings WHERE id = $1 FOR UPDATE`,
       [listingId],
     );
-    if (!listingRows[0]) {
+    const listingRow = listingRows[0];
+    if (!listingRow) {
       throw new ListingNotFoundError(`No listing "${listingId}"`);
+    }
+    if (listingRow.user_id === userId) {
+      throw new SelfRatingNotAllowedError("You can't rate your own listing");
+    }
+
+    const { rows: recentRows } = await client.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM ratings
+       WHERE user_id = $1 AND listing_id != $2 AND updated_at >= now() - $3::interval`,
+      [userId, listingId, RATE_LIMIT_WINDOW],
+    );
+    if (Number(recentRows[0]!.count) >= RATE_LIMIT_MAX_OTHER_LISTINGS) {
+      throw new RatingRateLimitedError(
+        `Too many ratings submitted recently - try again in a few minutes`,
+      );
     }
 
     const { rows: ratingRows } = await client.query<RatingRow>(
@@ -93,9 +125,9 @@ export async function rateListing(
        RETURNING *`,
       [listingId, userId, stars, comment ?? null],
     );
-    const listingRow = await recomputeListingAggregate(client, listingId);
+    const updatedListingRow = await recomputeListingAggregate(client, listingId);
     await client.query("COMMIT");
-    return { rating: toRating(ratingRows[0]!), listing: toListingSummary(listingRow) };
+    return { rating: toRating(ratingRows[0]!), listing: toListingSummary(updatedListingRow) };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
