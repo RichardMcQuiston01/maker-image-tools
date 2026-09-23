@@ -8,6 +8,7 @@ import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
 import { AccountsConfigError, isModerator, ModeratorVerificationError } from "./moderatorAuth.js";
 import {
   approvePreset,
+  findSimilarApprovedPreset,
   getPresetById,
   getPresetHistory,
   InvalidPresetInputError,
@@ -18,6 +19,13 @@ import {
   searchPresets,
   submitPreset,
 } from "./presets.js";
+import {
+  InvalidVoteValueError,
+  PresetNotApprovedError,
+  removeVote,
+  SelfVoteNotAllowedError,
+  voteOnPreset,
+} from "./votes.js";
 
 /** Thrown when a caller-supplied reviewerId doesn't belong to a moderator. */
 export class NotAModeratorError extends Error {}
@@ -27,7 +35,7 @@ const MAX_BODY_BYTES = 1 * 1024 * 1024;
 function setCorsHeaders(res: ServerResponse): void {
   // Wide open for local/dev use; a real deployment would restrict this to the app's own origin.
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
@@ -115,10 +123,10 @@ function errorStatus(err: unknown): number {
     err instanceof ModeratorVerificationError
   )
     return 500;
-  if (err instanceof InvalidPresetInputError) return 400;
-  if (err instanceof NotAModeratorError) return 403;
+  if (err instanceof InvalidPresetInputError || err instanceof InvalidVoteValueError) return 400;
+  if (err instanceof NotAModeratorError || err instanceof SelfVoteNotAllowedError) return 403;
   if (err instanceof PresetNotFoundError) return 404;
-  if (err instanceof PresetNotPendingError) return 409;
+  if (err instanceof PresetNotPendingError || err instanceof PresetNotApprovedError) return 409;
   const message = err instanceof Error ? err.message : "";
   if (message === "Request body too large") return 413;
   if (
@@ -135,6 +143,7 @@ function errorStatus(err: unknown): number {
 const PRESET_ID_RE = /^\/presets\/([^/]+)$/;
 const APPROVE_RE = /^\/presets\/([^/]+)\/approve$/;
 const REJECT_RE = /^\/presets\/([^/]+)\/reject$/;
+const VOTE_RE = /^\/presets\/([^/]+)\/vote$/;
 
 export function createServer(pool: Pool = createPool()) {
   const migrationsReady = runMigrations(pool);
@@ -155,17 +164,35 @@ export function createServer(pool: Pool = createPool()) {
       .then(async () => {
         if (req.method === "POST" && pathname === "/presets") {
           const body = await parseJsonBody(req);
+          const material = requireString(body, "material");
+          const machineType = requireString(body, "machineType");
+          const operation = requireString(body, "operation");
+          const speed = requireNumber(body, "speed");
+          const power = requireNumber(body, "power");
+          const passes = optionalInteger(body, "passes");
           const preset = await submitPreset(pool, {
             userId: requireString(body, "userId"),
-            material: requireString(body, "material"),
-            machineType: requireString(body, "machineType"),
-            operation: requireString(body, "operation"),
-            speed: requireNumber(body, "speed"),
-            power: requireNumber(body, "power"),
-            passes: optionalInteger(body, "passes"),
+            material,
+            machineType,
+            operation,
+            speed,
+            power,
+            passes,
             notes: optionalString(body, "notes"),
           });
-          sendJson(res, 201, { preset });
+          // Informational only - a close match never blocks the submission, just nudges the
+          // caller that they might want to vote for the existing one instead. See
+          // findSimilarApprovedPreset's docs for the tolerance this uses.
+          const similarPreset = await findSimilarApprovedPreset(
+            pool,
+            material,
+            machineType,
+            operation,
+            speed,
+            power,
+            passes ?? 1,
+          );
+          sendJson(res, 201, { preset, similarPreset });
           return;
         }
 
@@ -228,6 +255,27 @@ export function createServer(pool: Pool = createPool()) {
           );
           sendJson(res, 200, { preset });
           return;
+        }
+
+        const voteMatch = pathname.match(VOTE_RE);
+        if (voteMatch) {
+          const presetId = voteMatch[1]!;
+          if (req.method === "POST") {
+            const body = await parseJsonBody(req);
+            const preset = await voteOnPreset(
+              pool,
+              presetId,
+              requireString(body, "userId"),
+              requireNumber(body, "value"),
+            );
+            sendJson(res, 200, { preset });
+            return;
+          }
+          if (req.method === "DELETE") {
+            const preset = await removeVote(pool, presetId, requireQueryParam(url, "userId"));
+            sendJson(res, 200, { preset });
+            return;
+          }
         }
 
         const idMatch = pathname.match(PRESET_ID_RE);

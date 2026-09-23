@@ -8,6 +8,7 @@ import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 const USER_1 = "11111111-1111-1111-1111-111111111111";
 const REVIEWER = "22222222-2222-2222-2222-222222222222";
 const NON_MODERATOR = "33333333-3333-3333-3333-333333333333";
+const VOTER = "44444444-4444-4444-4444-444444444444";
 
 describe("material-db server", () => {
   let pool: Pool;
@@ -206,5 +207,97 @@ describe("material-db server", () => {
   it("returns 404 for unknown routes", async () => {
     const response = await fetch(`${baseUrl}/nope`);
     expect(response.status).toBe(404);
+  });
+
+  function approve(id: string) {
+    return fetch(`${baseUrl}/presets/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewerId: REVIEWER }),
+    });
+  }
+
+  it("returns a null similarPreset when nothing close already exists", async () => {
+    const response = await submit();
+    expect(response.status).toBe(201);
+    expect((await response.json()).similarPreset).toBeUndefined();
+  });
+
+  it("returns a similarPreset nudge when an approved near-duplicate already exists", async () => {
+    const first = await (await submit({ speed: 300, power: 950 })).json();
+    await approve(first.preset.id);
+
+    const second = await submit({ speed: 310, power: 940 });
+    expect(second.status).toBe(201);
+    const body = await second.json();
+    expect(body.similarPreset.id).toBe(first.preset.id);
+  });
+
+  describe("voting", () => {
+    it("upvotes a preset via POST /presets/:id/vote", async () => {
+      const created = await (await submit()).json();
+      await approve(created.preset.id);
+
+      const response = await fetch(`${baseUrl}/presets/${created.preset.id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: VOTER, value: 1 }),
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.preset.upvotes).toBe(1);
+      expect(body.preset.downvotes).toBe(0);
+    });
+
+    it("removes a vote via DELETE /presets/:id/vote", async () => {
+      const created = await (await submit()).json();
+      await approve(created.preset.id);
+      await fetch(`${baseUrl}/presets/${created.preset.id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: VOTER, value: 1 }),
+      });
+
+      const response = await fetch(`${baseUrl}/presets/${created.preset.id}/vote?userId=${VOTER}`, {
+        method: "DELETE",
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).preset.upvotes).toBe(0);
+    });
+
+    it("rejects voting on your own preset with 403", async () => {
+      const created = await (await submit()).json();
+      await approve(created.preset.id);
+
+      const response = await fetch(`${baseUrl}/presets/${created.preset.id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: USER_1, value: 1 }),
+      });
+      expect(response.status).toBe(403);
+    });
+
+    it("rejects voting on a pending preset with 409", async () => {
+      const created = await (await submit()).json();
+
+      const response = await fetch(`${baseUrl}/presets/${created.preset.id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: VOTER, value: 1 }),
+      });
+      expect(response.status).toBe(409);
+    });
+
+    it("rejects an invalid vote value with 400", async () => {
+      const created = await (await submit()).json();
+      await approve(created.preset.id);
+
+      const response = await fetch(`${baseUrl}/presets/${created.preset.id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: VOTER, value: 5 }),
+      });
+      expect(response.status).toBe(400);
+    });
   });
 });

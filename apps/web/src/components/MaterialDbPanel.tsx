@@ -11,6 +11,20 @@ interface Preset {
   power: number;
   passes: number;
   notes: string | null;
+  submittedBy: string;
+  upvotes: number;
+  downvotes: number;
+}
+
+/** Reads a failed fetch response's `{ error }` body, falling back to a generic message with its status if the body isn't JSON. */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    if (typeof body.error === "string" && body.error.length > 0) return body.error;
+  } catch {
+    // Body wasn't JSON - fall through to the generic message below.
+  }
+  return `${fallback} with ${response.status}`;
 }
 
 interface PresetVersion {
@@ -40,6 +54,7 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
   const [historyByPreset, setHistoryByPreset] = useState<Record<string, PresetVersion[]>>({});
   const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
+  const [myVoteByPreset, setMyVoteByPreset] = useState<Record<string, 1 | -1 | undefined>>({});
 
   const [submitMaterial, setSubmitMaterial] = useState("");
   const [submitMachineType, setSubmitMachineType] = useState("");
@@ -47,6 +62,7 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
   const [submitSpeed, setSubmitSpeed] = useState(300);
   const [submitPower, setSubmitPower] = useState(1000);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "submitted">("idle");
+  const [similarPresetNudge, setSimilarPresetNudge] = useState<Preset | null>(null);
 
   const handleSearch = useCallback(async () => {
     try {
@@ -111,6 +127,7 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
     try {
       setSubmitStatus("submitting");
       setError(null);
+      setSimilarPresetNudge(null);
       const response = await fetch(`${MATERIAL_DB_URL}/presets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -126,7 +143,9 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
       if (!response.ok) {
         throw new Error(`Submission failed with ${response.status}`);
       }
+      const body = (await response.json()) as { similarPreset?: Preset };
       setSubmitStatus("submitted");
+      setSimilarPresetNudge(body.similarPreset ?? null);
       setSubmitMaterial("");
       setSubmitMachineType("");
       setSubmitOperation("");
@@ -139,6 +158,43 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
       );
     }
   }, [user, submitMaterial, submitMachineType, submitOperation, submitSpeed, submitPower]);
+
+  const handleVote = useCallback(
+    async (preset: Preset, value: 1 | -1) => {
+      if (!user) return;
+      try {
+        setError(null);
+        const alreadyThisValue = myVoteByPreset[preset.id] === value;
+        const response = alreadyThisValue
+          ? await fetch(
+              `${MATERIAL_DB_URL}/presets/${preset.id}/vote?userId=${encodeURIComponent(user.id)}`,
+              { method: "DELETE" },
+            )
+          : await fetch(`${MATERIAL_DB_URL}/presets/${preset.id}/vote`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: user.id, value }),
+            });
+        if (!response.ok) {
+          setError(await readErrorMessage(response, "Vote failed"));
+          return;
+        }
+        const body = (await response.json()) as { preset: Preset };
+        setResults((current) => current.map((p) => (p.id === preset.id ? body.preset : p)));
+        setMyVoteByPreset((current) => ({
+          ...current,
+          [preset.id]: alreadyThisValue ? undefined : value,
+        }));
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/material-db dev server running?)`
+            : "Failed to vote",
+        );
+      }
+    },
+    [user, myVoteByPreset],
+  );
 
   return (
     <section className="ai-panel">
@@ -189,6 +245,9 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
                   {preset.material} — {preset.machineType} — {preset.operation} (speed{" "}
                   {preset.speed}, power {preset.power})
                 </span>
+                <span className="material-db-panel__votes">
+                  👍 {preset.upvotes} · 👎 {preset.downvotes}
+                </span>
                 <div className="ai-panel__actions">
                   <button
                     type="button"
@@ -199,6 +258,24 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
                   <button type="button" onClick={() => void handleToggleHistory(preset)}>
                     {openHistory[preset.id] ? "Hide history" : "Show history"}
                   </button>
+                  {authStatus === "signed-in" && user?.id !== preset.submittedBy && (
+                    <>
+                      <button
+                        type="button"
+                        aria-pressed={myVoteByPreset[preset.id] === 1}
+                        onClick={() => void handleVote(preset, 1)}
+                      >
+                        👍 Upvote
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={myVoteByPreset[preset.id] === -1}
+                        onClick={() => void handleVote(preset, -1)}
+                      >
+                        👎 Downvote
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               {openHistory[preset.id] &&
@@ -276,7 +353,16 @@ export function MaterialDbPanel({ onApplyPreset }: MaterialDbPanelProps) {
             {submitStatus === "submitting" ? "Submitting…" : "Submit for review"}
           </button>
           {submitStatus === "submitted" && (
-            <p className="ai-panel__hint">Submitted — awaiting moderation.</p>
+            <>
+              <p className="ai-panel__hint">Submitted — awaiting moderation.</p>
+              {similarPresetNudge && (
+                <p className="ai-panel__hint material-db-panel__similar-nudge">
+                  A very similar preset already exists (speed {similarPresetNudge.speed}, power{" "}
+                  {similarPresetNudge.power}) — consider voting for it instead of submitting a
+                  near-duplicate.
+                </p>
+              )}
+            </>
           )}
         </div>
       )}
