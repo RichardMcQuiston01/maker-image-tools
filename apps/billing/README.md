@@ -59,6 +59,7 @@ then a test Product/Price for the `pro` plan and a webhook endpoint (the Stripe 
 | `GET /subscription`      | `?userId=`                                                                         | `200 { planTier, status, currentPeriodEnd }` — `{ planTier: "free", status: "none", currentPeriodEnd: null }` if the user has no subscription |
 | `POST /usage`            | `{ userId, metric, quantity? }` (`quantity` defaults to `1`)                       | `204`                                                                                                                                         |
 | `GET /usage`             | `?userId=&metric=&since=` (`since` defaults to the start of the current UTC month) | `200 { metric, total }`                                                                                                                       |
+| `POST /usage/report`     | `{ userId }`                                                                       | `200 { reported }` — reports the user's unreported usage to Stripe / `404` if they have no Stripe customer yet                                |
 | `POST /webhook`          | raw Stripe event body, `Stripe-Signature` header                                   | `200 { received: true }` / `400` on a bad/missing signature                                                                                   |
 
 `/webhook` handles `checkout.session.completed`, `customer.subscription.updated`, and
@@ -66,13 +67,29 @@ then a test Product/Price for the `pro` plan and a webhook endpoint (the Stripe 
 in sync with Stripe. Every other event type is a no-op (Stripe sends many event types this service
 doesn't need).
 
+## Usage-based billing
+
+`POST /usage/report`'s `usage.ts`:`reportUsageToStripe` reports a user's not-yet-reported
+`usage_events` rows to Stripe as [Billing Meter events](https://docs.stripe.com/billing/subscriptions/usage-based/recording-usage)
+(`stripe.billing.meterEvents.create`), one event per row, using the row's `metric` as the meter's
+`event_name` — a [Stripe Meter](https://dashboard.stripe.com/meters) configured with that same
+`event_name` and attached to a metered Price is what actually turns these into metered invoice
+line items; that meter/price setup happens on the Stripe dashboard, the same way `STRIPE_PRICE_PRO`
+is a dashboard-created Price ID this service just references. Each reported row's
+`stripe_reported_at` column is set right away, so calling `/usage/report` again only reports usage
+recorded since the last call — nothing is ever double-reported (Stripe's own per-event `identifier`
+also de-dupes server-side within a rolling ~24h window, as a second line of defense). Nothing calls
+`/usage/report` automatically yet — it's meant to be hit periodically (e.g. a daily cron per active
+subscriber) once a real deployment wants Stripe-side metered invoicing; see "What's not here yet".
+
 ## What's not here yet
 
 - **Multiple paid plan tiers** — only `pro` is wired up (`STRIPE_PRICE_PRO`). Adding another tier
   is a matter of adding another entry to `src/plans.ts`'s price-env-var map plus its own env var.
-- **Usage-based billing / metered pricing** — `/usage` just records and totals events; nothing
-  reports usage back to Stripe for metered invoicing yet. Nothing in `apps/web` calls `/usage` yet
-  either — that's a follow-up once a feature actually needs a usage cap.
+- **A scheduler that calls `/usage/report` automatically** — see "Usage-based billing" above: the
+  reporting logic and route exist and are idempotent, but nothing in this repo calls them on a
+  schedule yet (no cron/queue infrastructure exists here), and nothing in `apps/web` calls `/usage`
+  or `/usage/report` yet either — that's a follow-up once a feature actually needs a usage cap.
 - **Failed-payment / dunning emails** — Stripe's own dashboard/portal handles this today; no
   custom notification flow.
 
