@@ -19,10 +19,15 @@ import {
   getUsageTotal,
   InvalidUsageQuantityError,
   recordUsage,
+  reportAllUnreportedUsage,
   reportUsageToStripe,
 } from "./usage.js";
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
+// Matches @maker/accounts's expired-session cleanup cadence - frequent enough
+// that usage shows up in Stripe within about an hour of being recorded,
+// infrequent enough not to hammer the DB or Stripe's API between runs.
+const USAGE_REPORT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 function setCorsHeaders(res: ServerResponse): void {
   // Wide open for local/dev use; a real deployment would restrict this to the app's own origin.
@@ -104,7 +109,16 @@ function errorStatus(err: unknown): number {
 export function createServer(pool: Pool = createPool(), stripe: Stripe = getStripeClient()) {
   const migrationsReady = runMigrations(pool);
 
-  return createHttpServer((req, res) => {
+  const runScheduledUsageReport = () => {
+    reportAllUnreportedUsage(pool, stripe).catch((err: unknown) => {
+      console.error("Failed to run scheduled usage report:", err);
+    });
+  };
+  const usageReportTimer = setInterval(runScheduledUsageReport, USAGE_REPORT_INTERVAL_MS);
+  // Don't let this timer keep the process (or a test's event loop) alive.
+  usageReportTimer.unref();
+
+  const server = createHttpServer((req, res) => {
     setCorsHeaders(res);
 
     if (req.method === "OPTIONS") {
@@ -201,4 +215,7 @@ export function createServer(pool: Pool = createPool(), stripe: Stripe = getStri
         sendJson(res, errorStatus(err), { error: message });
       });
   });
+
+  server.on("close", () => clearInterval(usageReportTimer));
+  return server;
 }

@@ -167,3 +167,55 @@ export async function reportUsageToStripe(
     client.release();
   }
 }
+
+async function findUsersWithUnreportedUsage(pool: Pool): Promise<string[]> {
+  const { rows } = await pool.query<{ user_id: string }>(
+    "SELECT DISTINCT user_id FROM usage_events WHERE stripe_reported_at IS NULL",
+  );
+  return rows.map((row) => row.user_id);
+}
+
+export interface ScheduledUsageReportResult {
+  usersReported: number;
+  eventsReported: number;
+  usersSkipped: number;
+}
+
+/**
+ * Calls `reportUsageToStripe` for every user with at least one unreported
+ * `usage_events` row - what `createServer`'s periodic scheduler (see
+ * `server.ts`) runs on a timer, so `POST /usage/report`'s per-user reporting
+ * actually happens without a caller remembering to trigger it.
+ *
+ * A user with unreported usage but no Stripe customer on file yet (e.g. they
+ * used a metered feature before ever subscribing) is counted in
+ * `usersSkipped`, not treated as a failure - there's nothing to report to
+ * until they have a customer, and their events stay unreported for the next
+ * run to pick up once they do. Any other per-user failure (e.g. a transient
+ * Stripe/DB error) is logged and skipped too, so one user's failure can't
+ * block reporting for the rest - the same isolation `reportUnreportedUsage`
+ * already applies at the per-event level, one level up.
+ */
+export async function reportAllUnreportedUsage(
+  pool: Pool,
+  stripe: Stripe,
+): Promise<ScheduledUsageReportResult> {
+  const userIds = await findUsersWithUnreportedUsage(pool);
+  let usersReported = 0;
+  let eventsReported = 0;
+  let usersSkipped = 0;
+  for (const userId of userIds) {
+    try {
+      const { reported } = await reportUsageToStripe(pool, stripe, userId);
+      eventsReported += reported;
+      if (reported > 0) usersReported++;
+    } catch (err) {
+      if (err instanceof NoStripeCustomerError) {
+        usersSkipped++;
+        continue;
+      }
+      console.error(`Failed to report usage for user "${userId}":`, err);
+    }
+  }
+  return { usersReported, eventsReported, usersSkipped };
+}
