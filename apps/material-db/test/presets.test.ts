@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import {
   approvePreset,
+  findSimilarApprovedPreset,
   getPresetById,
   getPresetHistory,
   InvalidPresetInputError,
@@ -228,6 +229,92 @@ describe("presets", () => {
       await expect(
         approvePreset(pool, "00000000-0000-0000-0000-000000000000", USER_2),
       ).rejects.toThrow(PresetNotFoundError);
+    });
+  });
+
+  describe("findSimilarApprovedPreset", () => {
+    it("finds an approved preset with speed/power within 10% and identical passes", async () => {
+      const preset = await submitPreset(pool, baseSubmission({ speed: 300, power: 950 }));
+      await approvePreset(pool, preset.id, USER_2);
+
+      const similar = await findSimilarApprovedPreset(
+        pool,
+        "Baltic Birch Plywood 3mm",
+        "diode-laser",
+        "cut",
+        320, // within 10% of 300
+        900, // within 10% of 950
+        1,
+      );
+      expect(similar?.id).toBe(preset.id);
+    });
+
+    it("returns undefined when speed/power differ by more than the tolerance", async () => {
+      const preset = await submitPreset(pool, baseSubmission({ speed: 300, power: 950 }));
+      await approvePreset(pool, preset.id, USER_2);
+
+      const notSimilar = await findSimilarApprovedPreset(
+        pool,
+        "Baltic Birch Plywood 3mm",
+        "diode-laser",
+        "cut",
+        500,
+        950,
+        1,
+      );
+      expect(notSimilar).toBeUndefined();
+    });
+
+    it("returns undefined when passes differ, even if speed/power match exactly", async () => {
+      const preset = await submitPreset(
+        pool,
+        baseSubmission({ speed: 300, power: 950, passes: 1 }),
+      );
+      await approvePreset(pool, preset.id, USER_2);
+
+      const notSimilar = await findSimilarApprovedPreset(
+        pool,
+        "Baltic Birch Plywood 3mm",
+        "diode-laser",
+        "cut",
+        300,
+        950,
+        2,
+      );
+      expect(notSimilar).toBeUndefined();
+    });
+
+    it("ignores a pending or rejected preset - only approved ones count as a match", async () => {
+      await submitPreset(pool, baseSubmission({ speed: 300, power: 950 }));
+
+      const notSimilar = await findSimilarApprovedPreset(
+        pool,
+        "Baltic Birch Plywood 3mm",
+        "diode-laser",
+        "cut",
+        300,
+        950,
+        1,
+      );
+      expect(notSimilar).toBeUndefined();
+    });
+
+    it("picks the closest match when multiple approved presets are within tolerance", async () => {
+      const closer = await submitPreset(pool, baseSubmission({ speed: 305, power: 945 }));
+      await approvePreset(pool, closer.id, USER_2);
+      const farther = await submitPreset(pool, baseSubmission({ speed: 330, power: 900 }));
+      await approvePreset(pool, farther.id, USER_2);
+
+      const similar = await findSimilarApprovedPreset(
+        pool,
+        "Baltic Birch Plywood 3mm",
+        "diode-laser",
+        "cut",
+        300,
+        950,
+        1,
+      );
+      expect(similar?.id).toBe(closer.id);
     });
   });
 });

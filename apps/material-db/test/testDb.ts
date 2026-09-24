@@ -25,5 +25,5 @@ export async function setupTestDb(pool: Pool): Promise<void> {
 
 /** Clears all app tables between tests so each test starts from a known-empty state. */
 export async function resetTestDb(pool: Pool): Promise<void> {
-  await pool.query("TRUNCATE presets");
+  await pool.query("TRUNCATE presets, preset_votes");
 }

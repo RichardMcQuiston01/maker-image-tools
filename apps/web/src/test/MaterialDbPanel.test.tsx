@@ -199,4 +199,192 @@ describe("MaterialDbPanel", () => {
     expect(String(url)).toContain("operation=cut");
     expect(screen.getByRole("button", { name: "Hide history" })).toBeInTheDocument();
   });
+
+  it("shows vote counts and hides voting buttons for the signed-in user's own submission", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        presets: [
+          {
+            id: "1",
+            material: "baltic birch plywood 3mm",
+            machineType: "diode-laser",
+            operation: "cut",
+            speed: 300,
+            power: 950,
+            passes: 2,
+            notes: null,
+            submittedBy: SIGNED_IN_USER.id,
+            upvotes: 3,
+            downvotes: 1,
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <MaterialDbPanel onApplyPreset={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+
+    expect(await screen.findByText(/👍 3/)).toBeInTheDocument();
+    expect(screen.getByText(/👎 1/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Upvote/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Downvote/ })).not.toBeInTheDocument();
+  });
+
+  it("upvotes another user's preset and updates the displayed count", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        presets: [
+          {
+            id: "1",
+            material: "baltic birch plywood 3mm",
+            machineType: "diode-laser",
+            operation: "cut",
+            speed: 300,
+            power: 950,
+            passes: 2,
+            notes: null,
+            submittedBy: "22222222-2222-2222-2222-222222222222",
+            upvotes: 0,
+            downvotes: 0,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        preset: {
+          id: "1",
+          material: "baltic birch plywood 3mm",
+          machineType: "diode-laser",
+          operation: "cut",
+          speed: 300,
+          power: 950,
+          passes: 2,
+          notes: null,
+          submittedBy: "22222222-2222-2222-2222-222222222222",
+          upvotes: 1,
+          downvotes: 0,
+        },
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <MaterialDbPanel onApplyPreset={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Upvote/ }));
+
+    expect(await screen.findByText(/👍 1/)).toBeInTheDocument();
+    const [url, init] = fetchMock.mock.calls[2]!;
+    expect(String(url)).toContain("/presets/1/vote");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ userId: SIGNED_IN_USER.id, value: 1 });
+  });
+
+  it("removes a vote when clicking the same vote button again", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        presets: [
+          {
+            id: "1",
+            material: "baltic birch plywood 3mm",
+            machineType: "diode-laser",
+            operation: "cut",
+            speed: 300,
+            power: 950,
+            passes: 2,
+            notes: null,
+            submittedBy: "22222222-2222-2222-2222-222222222222",
+            upvotes: 0,
+            downvotes: 0,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        preset: {
+          id: "1",
+          submittedBy: "22222222-2222-2222-2222-222222222222",
+          upvotes: 1,
+          downvotes: 0,
+        },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        preset: {
+          id: "1",
+          submittedBy: "22222222-2222-2222-2222-222222222222",
+          upvotes: 0,
+          downvotes: 0,
+        },
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <MaterialDbPanel onApplyPreset={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Upvote/ }));
+    await screen.findByText(/👍 1/);
+
+    fireEvent.click(screen.getByRole("button", { name: /Upvote/ }));
+    await screen.findByText(/👍 0/);
+
+    const [url, init] = fetchMock.mock.calls[3]!;
+    expect(String(url)).toContain(`/presets/1/vote?userId=${SIGNED_IN_USER.id}`);
+    expect(init?.method).toBe("DELETE");
+  });
+
+  it("shows a similar-preset nudge when submitting a near-duplicate", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(201, {
+        preset: { id: "2", status: "pending" },
+        similarPreset: { id: "1", speed: 300, power: 950 },
+      }),
+    );
+
+    const { container } = render(
+      <AuthProvider>
+        <MaterialDbPanel onApplyPreset={vi.fn()} />
+      </AuthProvider>,
+    );
+    await screen.findByText("Submit a preset");
+    const submitSection = container.querySelector<HTMLElement>(".material-db-panel__submit")!;
+    fireEvent.change(within(submitSection).getByPlaceholderText("Material"), {
+      target: { value: "Acrylic 3mm" },
+    });
+    fireEvent.change(within(submitSection).getByPlaceholderText("Machine type"), {
+      target: { value: "co2-laser" },
+    });
+    fireEvent.change(within(submitSection).getByPlaceholderText("Operation"), {
+      target: { value: "engrave" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+
+    expect(
+      await screen.findByText(/A very similar preset already exists \(speed 300, power 950\)/),
+    ).toBeInTheDocument();
+  });
 });

@@ -18,9 +18,11 @@ export interface Preset {
   reviewedAt: string | null;
   reviewNotes: string | null;
   createdAt: string;
+  upvotes: number;
+  downvotes: number;
 }
 
-interface PresetRow {
+export interface PresetRow {
   id: string;
   material: string;
   machine_type: string;
@@ -36,9 +38,11 @@ interface PresetRow {
   reviewed_at: Date | null;
   review_notes: string | null;
   created_at: Date;
+  upvotes: number;
+  downvotes: number;
 }
 
-function toPreset(row: PresetRow): Preset {
+export function toPreset(row: PresetRow): Preset {
   return {
     id: row.id,
     material: row.material,
@@ -55,6 +59,8 @@ function toPreset(row: PresetRow): Preset {
     reviewedAt: row.reviewed_at ? row.reviewed_at.toISOString() : null,
     reviewNotes: row.review_notes,
     createdAt: row.created_at.toISOString(),
+    upvotes: row.upvotes,
+    downvotes: row.downvotes,
   };
 }
 
@@ -179,6 +185,51 @@ export async function getPresetHistory(
     [normalizeKey(material), normalizeKey(machineType), normalizeKey(operation)],
   );
   return rows.map(toPreset);
+}
+
+/** A submission counts as a near-duplicate of an existing approved preset if its speed and power
+ * are both within this fraction of the existing one's - passes must match exactly, since e.g. 1
+ * vs 2 passes is a meaningfully different process, not a rounding difference. */
+const DUPLICATE_TOLERANCE = 0.1;
+
+/**
+ * Finds the closest already-approved preset for the same (material, machineType, operation) key
+ * whose speed/power/passes are a near-duplicate of the given values - the "did you mean to vote
+ * for this instead of resubmitting" nudge `submitPreset`'s caller (see server.ts) surfaces
+ * alongside a successful submission. Never blocks the submission itself: a crowdsourced value
+ * space benefits from multiple independent confirmations of the same setting, so this is
+ * informational, not a rejection.
+ */
+export async function findSimilarApprovedPreset(
+  pool: Pool,
+  material: string,
+  machineType: string,
+  operation: string,
+  speed: number,
+  power: number,
+  passes: number,
+): Promise<Preset | undefined> {
+  const { rows } = await pool.query<PresetRow>(
+    `SELECT * FROM presets WHERE material = $1 AND machine_type = $2 AND operation = $3 AND status = 'approved'`,
+    [normalizeKey(material), normalizeKey(machineType), normalizeKey(operation)],
+  );
+
+  let best: PresetRow | undefined;
+  let bestDelta = Infinity;
+  for (const row of rows) {
+    if (row.passes !== passes) continue;
+    const rowSpeed = Number(row.speed);
+    const rowPower = Number(row.power);
+    const speedDelta = Math.abs(rowSpeed - speed) / rowSpeed;
+    const powerDelta = Math.abs(rowPower - power) / rowPower;
+    if (speedDelta > DUPLICATE_TOLERANCE || powerDelta > DUPLICATE_TOLERANCE) continue;
+    const delta = speedDelta + powerDelta;
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = row;
+    }
+  }
+  return best ? toPreset(best) : undefined;
 }
 
 export async function getPresetById(pool: Pool, id: string): Promise<Preset> {

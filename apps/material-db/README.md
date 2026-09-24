@@ -95,25 +95,57 @@ exact order.
 
 ## API
 
-| Route                       | Body / Query                                                                  | Response                                                                                                           |
-| --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `POST /presets`             | `{ userId, material, machineType, operation, speed, power, passes?, notes? }` | `201 { preset }` (status `pending`) / `400` for invalid input                                                      |
-| `GET /presets`              | `?material=&machineType=&operation=` (all optional)                           | `200 { presets }` — current approved preset per matching key                                                       |
-| `GET /presets/pending`      | —                                                                             | `200 { presets }` — awaiting moderation, oldest first                                                              |
-| `GET /presets/history`      | `?material=&machineType=&operation=` (all required)                           | `200 { presets }` — every version for that exact key, newest first                                                 |
-| `GET /presets/:id`          | —                                                                             | `200 { preset }` / `404`                                                                                           |
-| `POST /presets/:id/approve` | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `approved`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed |
-| `POST /presets/:id/reject`  | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `rejected`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed |
+| Route                       | Body / Query                                                                  | Response                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /presets`             | `{ userId, material, machineType, operation, speed, power, passes?, notes? }` | `201 { preset, similarPreset }` (status `pending`) — `similarPreset` is the closest approved near-duplicate, if any, or omitted / `400` for invalid input |
+| `GET /presets`              | `?material=&machineType=&operation=` (all optional)                           | `200 { presets }` — current approved preset per matching key                                                                                              |
+| `GET /presets/pending`      | —                                                                             | `200 { presets }` — awaiting moderation, oldest first                                                                                                     |
+| `GET /presets/history`      | `?material=&machineType=&operation=` (all required)                           | `200 { presets }` — every version for that exact key, newest first                                                                                        |
+| `GET /presets/:id`          | —                                                                             | `200 { preset }` / `404`                                                                                                                                  |
+| `POST /presets/:id/approve` | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `approved`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed                                        |
+| `POST /presets/:id/reject`  | `{ reviewerId, notes? }`                                                      | `200 { preset }` (status `rejected`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed                                        |
+| `POST /presets/:id/vote`    | `{ userId, value }` (`value` is `1` or `-1`)                                  | `200 { preset }` — upserts the caller's vote / `400` invalid `value` / `403` voting on your own preset / `404` / `409` if the preset isn't approved yet   |
+| `DELETE /presets/:id/vote`  | `?userId=`                                                                    | `200 { preset }` — removes the caller's vote, idempotent / `404`                                                                                          |
 
-`preset` is `{ id, material, machineType, operation, speed, power, passes, notes, status, version, submittedBy, reviewedBy, reviewedAt, reviewNotes, createdAt }`.
+`preset` is `{ id, material, machineType, operation, speed, power, passes, notes, status, version, submittedBy, reviewedBy, reviewedAt, reviewNotes, createdAt, upvotes, downvotes }`.
 `speed` is mm/min, `power` a 0-1000 S-value — matching `packages/material-library`'s `MaterialPreset`
 so a future seed migration is a straight field mapping.
 
+## Duplicate detection and voting
+
+Two independent, tractable pieces of the "is this setting any good, and does it already exist"
+question a crowdsourced preset library needs:
+
+- **Duplicate-submission detection** — `presets.ts`'s `findSimilarApprovedPreset` looks for an
+  already-**approved** preset for the same `(material, machineType, operation)` key whose `speed`
+  and `power` are both within 10% of the new submission's and whose `passes` matches exactly (1 vs
+  2 passes is a meaningfully different process, not a rounding difference). `POST /presets` returns
+  it as `similarPreset` alongside the newly created submission - purely informational, never a
+  block: a crowdsourced value space benefits from multiple independent confirmations of the same
+  setting, so the new submission is still recorded as its own version either way. `apps/web`'s
+  `MaterialDbPanel` shows it as a nudge ("a very similar preset already exists - consider voting
+  for it instead") next to the normal "submitted, awaiting moderation" confirmation.
+- **Voting** — any signed-in user other than a preset's own submitter can upvote or downvote an
+  **approved** preset (`preset_votes`, one row per `(preset, user)`, upserted on a repeat vote -
+  the same shape as `@maker/community-library`'s ratings table). Self-voting is rejected (`403`,
+  `SelfVoteNotAllowedError` in `votes.ts`) for the same reason `@maker/community-library` rejects
+  self-rating: nothing else stops a submitter from inflating their own preset's score. Voting on a
+  `pending`/`rejected` preset is rejected too (`409`, `PresetNotApprovedError`) - there's nothing
+  to vouch for in a submission nobody's reviewed yet. `upvotes`/`downvotes` are denormalized onto
+  the `presets` row (`votes.ts`'s `recomputeVoteAggregate`), so every response that already
+  includes a preset gets its vote counts for free.
+
+Votes are informational only - they don't change which version `GET /presets` returns as the
+current one for a key (still strictly the highest-versioned approved row, same as before this
+feature). Weighting "current" by vote score instead of recency is a legitimate follow-up, not
+something this closes silently.
+
 ## What's not here yet
 
-- **Duplicate-submission detection / voting** — two users submitting near-identical settings for the
-  same key just creates two versions; there's no "this matches an existing preset" nudge or
-  upvote/downvote signal yet.
+- **Vote-weighted "current" preset selection** — see "Duplicate detection and voting" above:
+  `GET /presets` still always returns the highest-versioned approved row per key, regardless of
+  vote counts. A highly-downvoted latest version currently still wins over a well-regarded older
+  one.
 
 ## Testing note
 
