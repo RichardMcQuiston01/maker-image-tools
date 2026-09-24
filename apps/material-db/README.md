@@ -80,9 +80,9 @@ sticking to, but this service doesn't enforce them, since a crowdsourced materia
 be a closed list.
 
 Every submission for a key gets the next `version` number and starts `pending`. A moderator
-approves or rejects it; search (`GET /presets`) only ever returns the highest-versioned **approved**
-row per key, while `GET /presets/history` returns every version (any status) for a key, so nothing
-is ever deleted or overwritten — that's the "versioned" part.
+approves or rejects it; search (`GET /presets`) returns the vote-weighted **approved** row per key
+(see "Duplicate detection and voting" below), while `GET /presets/history` returns every version
+(any status) for a key, so nothing is ever deleted or overwritten — that's the "versioned" part.
 
 ## Search
 
@@ -98,7 +98,7 @@ exact order.
 | Route                       | Body / Query                                                                  | Response                                                                                                                                                  |
 | --------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /presets`             | `{ userId, material, machineType, operation, speed, power, passes?, notes? }` | `201 { preset, similarPreset }` (status `pending`) — `similarPreset` is the closest approved near-duplicate, if any, or omitted / `400` for invalid input |
-| `GET /presets`              | `?material=&machineType=&operation=` (all optional)                           | `200 { presets }` — current approved preset per matching key                                                                                              |
+| `GET /presets`              | `?material=&machineType=&operation=` (all optional)                           | `200 { presets }` — vote-weighted current approved preset per matching key                                                                                |
 | `GET /presets/pending`      | —                                                                             | `200 { presets }` — awaiting moderation, oldest first                                                                                                     |
 | `GET /presets/history`      | `?material=&machineType=&operation=` (all required)                           | `200 { presets }` — every version for that exact key, newest first                                                                                        |
 | `GET /presets/:id`          | —                                                                             | `200 { preset }` / `404`                                                                                                                                  |
@@ -135,17 +135,16 @@ question a crowdsourced preset library needs:
   the `presets` row (`votes.ts`'s `recomputeVoteAggregate`), so every response that already
   includes a preset gets its vote counts for free.
 
-Votes are informational only - they don't change which version `GET /presets` returns as the
-current one for a key (still strictly the highest-versioned approved row, same as before this
-feature). Weighting "current" by vote score instead of recency is a legitimate follow-up, not
-something this closes silently.
-
-## What's not here yet
-
-- **Vote-weighted "current" preset selection** — see "Duplicate detection and voting" above:
-  `GET /presets` still always returns the highest-versioned approved row per key, regardless of
-  vote counts. A highly-downvoted latest version currently still wins over a well-regarded older
-  one.
+Votes also decide which version `GET /presets` returns as a key's current preset:
+`presets.ts`'s `searchPresets` orders each key's approved versions by net score
+(`upvotes - downvotes`) first, version number only as a tiebreak. In the common case - a version
+nobody's voted on yet, net score `0` - every version ties on score and the tiebreak makes this
+behave exactly like "highest version wins," same as before voting existed. Votes only change the
+outcome once they actually distinguish two versions: a highly-downvoted latest version no longer
+beats a well-regarded older one, and a well-regarded older version isn't buried under a newer
+version that just hasn't accumulated votes yet either. `GET /presets/history` is unaffected - it
+still lists every version (any status) newest-first, since that's a full audit trail, not a
+"what's best" query.
 
 ## Testing note
 

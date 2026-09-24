@@ -149,9 +149,14 @@ export interface PresetSearch {
 }
 
 /**
- * The current (highest-version, approved) preset for each matching (material, machineType,
- * operation) key - what a UI picking sane defaults for a material should query. `material` is
- * matched against `material_search` (see migration 002_fulltext_search.sql) via
+ * The current (vote-weighted, approved) preset for each matching (material, machineType,
+ * operation) key - what a UI picking sane defaults for a material should query. Within a key,
+ * the approved version with the highest net vote score (`upvotes - downvotes`) wins; version
+ * number only breaks a tie (most commonly: every version tied at a net score of 0, since voting
+ * is opt-in and most versions never get any - in that case this is exactly "highest version",
+ * same as before this ordering existed). This is what keeps a highly-downvoted latest version
+ * from beating a well-regarded older one - see "Duplicate detection and voting" in the README.
+ * `material` is matched against `material_search` (see migration 002_fulltext_search.sql) via
  * `plainto_tsquery`, so a multi-word query matches regardless of word order - unlike the plain
  * substring match this replaced.
  */
@@ -167,7 +172,7 @@ export async function searchPresets(pool: Pool, search: PresetSearch): Promise<P
        AND ($1::text IS NULL OR material_search @@ plainto_tsquery('english', $1))
        AND ($2::text IS NULL OR machine_type = $2)
        AND ($3::text IS NULL OR operation = $3)
-     ORDER BY material, machine_type, operation, version DESC`,
+     ORDER BY material, machine_type, operation, (upvotes - downvotes) DESC, version DESC`,
     [material, machineType, operation],
   );
   return rows.map(toPreset).sort((a, b) => a.material.localeCompare(b.material));
