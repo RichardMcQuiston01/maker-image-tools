@@ -8,6 +8,17 @@ interface Subscription {
   currentPeriodEnd: string | null;
 }
 
+/**
+ * The paid tiers `@maker/billing` sells (see its `plans.ts`), in ascending
+ * order - kept in sync with that map by hand, the same way this panel
+ * already duplicates the "pro" tier name rather than importing across
+ * services.
+ */
+const PAID_PLANS: { tier: string; label: string }[] = [
+  { tier: "pro", label: "Pro" },
+  { tier: "studio", label: "Studio" },
+];
+
 export function BillingPanel() {
   const { status: authStatus, user } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -42,36 +53,39 @@ export function BillingPanel() {
     };
   }, [authStatus, user]);
 
-  const handleUpgrade = useCallback(async () => {
-    if (!user) return;
-    try {
-      setBusy(true);
-      setError(null);
-      const response = await fetch(`${BILLING_URL}/checkout-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.id,
-          email: user.email,
-          planTier: "pro",
-          successUrl: window.location.href,
-          cancelUrl: window.location.href,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`Checkout failed with ${response.status}`);
+  const handleUpgrade = useCallback(
+    async (planTier: string) => {
+      if (!user) return;
+      try {
+        setBusy(true);
+        setError(null);
+        const response = await fetch(`${BILLING_URL}/checkout-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            email: user.email,
+            planTier,
+            successUrl: window.location.href,
+            cancelUrl: window.location.href,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`Checkout failed with ${response.status}`);
+        }
+        const { url } = (await response.json()) as { url: string };
+        window.location.href = url;
+      } catch (err) {
+        setBusy(false);
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/billing dev server running?)`
+            : "Failed to start checkout",
+        );
       }
-      const { url } = (await response.json()) as { url: string };
-      window.location.href = url;
-    } catch (err) {
-      setBusy(false);
-      setError(
-        err instanceof Error
-          ? `${err.message} (is the @maker/billing dev server running?)`
-          : "Failed to start checkout",
-      );
-    }
-  }, [user]);
+    },
+    [user],
+  );
 
   const handleManage = useCallback(async () => {
     if (!user) return;
@@ -107,7 +121,9 @@ export function BillingPanel() {
     );
   }
 
-  const isActivePro = subscription?.planTier === "pro" && subscription.status === "active";
+  const isActivePaidPlan =
+    subscription?.status === "active" &&
+    PAID_PLANS.some((plan) => plan.tier === subscription.planTier);
 
   return (
     <section className="ai-panel">
@@ -123,14 +139,21 @@ export function BillingPanel() {
         </p>
       )}
       <div className="ai-panel__actions">
-        {isActivePro ? (
+        {isActivePaidPlan ? (
           <button type="button" disabled={busy} onClick={() => void handleManage()}>
             {busy ? "Redirecting…" : "Manage Billing"}
           </button>
         ) : (
-          <button type="button" disabled={busy} onClick={() => void handleUpgrade()}>
-            {busy ? "Redirecting…" : "Upgrade to Pro"}
-          </button>
+          PAID_PLANS.map((plan) => (
+            <button
+              key={plan.tier}
+              type="button"
+              disabled={busy}
+              onClick={() => void handleUpgrade(plan.tier)}
+            >
+              {busy ? "Redirecting…" : `Upgrade to ${plan.label}`}
+            </button>
+          ))
         )}
       </div>
     </section>

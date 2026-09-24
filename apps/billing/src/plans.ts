@@ -7,6 +7,7 @@ import { StripeConfigError } from "./stripeClient.js";
  */
 const PLAN_PRICE_ENV_VARS: Record<string, string> = {
   pro: "STRIPE_PRICE_PRO",
+  studio: "STRIPE_PRICE_STUDIO",
 };
 
 /** Thrown for a plan tier this service doesn't sell (a caller/config error, not a Stripe error). */

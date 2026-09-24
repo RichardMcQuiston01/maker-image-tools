@@ -171,6 +171,7 @@ project count and total stored bytes, based on the caller's `@maker/billing` pla
 | --------- | ------------ | ------------------- |
 | `free`    | 10           | 5 MB                |
 | `pro`     | 200          | 250 MB              |
+| `studio`  | 1000         | 1 GB                |
 
 `billingClient.ts`'s `getPlanTier(userId)` calls `@maker/billing`'s `GET /subscription?userId=` to
 find the caller's tier (defaulting to `free` for anyone with no active subscription, matching

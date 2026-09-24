@@ -12,6 +12,12 @@ describe("quotaForPlanTier", () => {
     expect(quota.maxTotalBytes).toBeGreaterThan(quotaForPlanTier("free").maxTotalBytes);
   });
 
+  it("returns the studio tier's even higher limits for 'studio'", () => {
+    const quota = quotaForPlanTier("studio");
+    expect(quota.maxProjects).toBeGreaterThan(quotaForPlanTier("pro").maxProjects);
+    expect(quota.maxTotalBytes).toBeGreaterThan(quotaForPlanTier("pro").maxTotalBytes);
+  });
+
   it("falls back to the free tier's limits for an unrecognized plan tier", () => {
     expect(quotaForPlanTier("not-a-real-tier")).toEqual(quotaForPlanTier("free"));
   });
