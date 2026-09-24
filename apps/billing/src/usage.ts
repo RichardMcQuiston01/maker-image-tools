@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import type Stripe from "stripe";
 import { findStripeCustomerId } from "./customers.js";
 import { NoStripeCustomerError } from "./subscriptions.js";
@@ -45,22 +45,82 @@ interface UnreportedUsageEvent {
   id: string;
   metric: string;
   quantity: number;
+  createdAt: Date;
 }
 
 async function findUnreportedUsageEvents(
-  pool: Pool,
+  client: PoolClient,
   userId: string,
 ): Promise<UnreportedUsageEvent[]> {
-  const { rows } = await pool.query<{ id: string; metric: string; quantity: number }>(
-    "SELECT id, metric, quantity FROM usage_events " +
+  const { rows } = await client.query<{
+    id: string;
+    metric: string;
+    quantity: number;
+    created_at: Date;
+  }>(
+    "SELECT id, metric, quantity, created_at FROM usage_events " +
       "WHERE user_id = $1 AND stripe_reported_at IS NULL ORDER BY id",
     [userId],
   );
-  return rows;
+  return rows.map((row) => ({
+    id: row.id,
+    metric: row.metric,
+    quantity: row.quantity,
+    createdAt: row.created_at,
+  }));
+}
+
+/** Stripe rejects a meter event timestamped further back than this. */
+const METER_EVENT_MAX_AGE_MS = 34 * 24 * 60 * 60 * 1000;
+
+/**
+ * The Stripe timestamp to report a `usage_events` row's usage under - its own
+ * `created_at`, so usage always lands in the billing period it actually
+ * happened in, not the (possibly much later) period a delayed reporting run
+ * happens to execute in. `undefined` (Stripe then defaults to "now") only
+ * for a row too old for Stripe's 35-day window to accept as-is; that still
+ * reports it - in the wrong period - rather than leaving it unreported
+ * forever or blocking every newer row queued behind it.
+ */
+function meterEventTimestamp(createdAt: Date): number | undefined {
+  if (Date.now() - createdAt.getTime() > METER_EVENT_MAX_AGE_MS) return undefined;
+  return Math.floor(createdAt.getTime() / 1000);
 }
 
 export interface UsageReportResult {
   reported: number;
+}
+
+async function reportUnreportedUsage(
+  client: PoolClient,
+  stripe: Stripe,
+  userId: string,
+  customerId: string,
+): Promise<UsageReportResult> {
+  const unreported = await findUnreportedUsageEvents(client, userId);
+  let reported = 0;
+  for (const event of unreported) {
+    try {
+      const timestamp = meterEventTimestamp(event.createdAt);
+      await stripe.billing.meterEvents.create({
+        event_name: event.metric,
+        payload: { stripe_customer_id: customerId, value: String(event.quantity) },
+        identifier: `usage_event_${event.id}`,
+        ...(timestamp !== undefined && { timestamp }),
+      });
+    } catch {
+      // Leave this row unreported - it's retried on the next call - rather
+      // than letting one bad row (e.g. a metric with no Stripe Meter
+      // configured for it) permanently block every later row behind it,
+      // which `ORDER BY id` would otherwise select first on every retry.
+      continue;
+    }
+    await client.query("UPDATE usage_events SET stripe_reported_at = now() WHERE id = $1", [
+      event.id,
+    ]);
+    reported++;
+  }
+  return { reported };
 }
 
 /**
@@ -72,16 +132,18 @@ export interface UsageReportResult {
  * Price ID being the dashboard-side counterpart to `priceIdForPlan` above.
  *
  * Each row's `stripe_reported_at` is set right after Stripe accepts it, so a
- * re-run of this function (e.g. a periodic job) never reports it twice; if
- * `meterEvents.create` throws partway through a batch, everything reported
- * so far stays marked and the rest is retried on the next run - Stripe's own
- * per-event `identifier` also de-dupes server-side as a second line of
- * defense, within a rolling ~24h window.
+ * re-run of this function (e.g. a periodic job) never reports it twice;
+ * Stripe's own per-event `identifier` also de-dupes server-side as a second
+ * line of defense, within a rolling ~24h window (this doesn't cover a crash
+ * between Stripe accepting an event and the following `UPDATE` committing -
+ * see the PR discussion for why that residual gap is accepted rather than
+ * built out further here).
  *
- * `timestamp` is deliberately omitted from the Stripe call (Stripe defaults
- * it to "now"): meter events must be timestamped within the past 35 days,
- * and a reporting job that's fallen behind could otherwise try to report a
- * `usage_events` row older than that and fail outright.
+ * The whole call runs under a session-scoped Postgres advisory lock keyed on
+ * `userId`, so two overlapping calls for the same user (e.g. a manual retry
+ * racing a scheduled job) never select and report the same row twice; it's
+ * released before returning, not tied to a transaction, so it doesn't hold a
+ * DB transaction open across the Stripe network calls above.
  */
 export async function reportUsageToStripe(
   pool: Pool,
@@ -93,16 +155,15 @@ export async function reportUsageToStripe(
     throw new NoStripeCustomerError(`No Stripe customer on file for user "${userId}"`);
   }
 
-  const unreported = await findUnreportedUsageEvents(pool, userId);
-  for (const event of unreported) {
-    await stripe.billing.meterEvents.create({
-      event_name: event.metric,
-      payload: { stripe_customer_id: customerId, value: String(event.quantity) },
-      identifier: `usage_event_${event.id}`,
-    });
-    await pool.query("UPDATE usage_events SET stripe_reported_at = now() WHERE id = $1", [
-      event.id,
-    ]);
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock(hashtext($1))", [userId]);
+    try {
+      return await reportUnreportedUsage(client, stripe, userId, customerId);
+    } finally {
+      await client.query("SELECT pg_advisory_unlock(hashtext($1))", [userId]);
+    }
+  } finally {
+    client.release();
   }
-  return { reported: unreported.length };
 }

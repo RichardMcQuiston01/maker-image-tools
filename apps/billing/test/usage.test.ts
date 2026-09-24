@@ -175,5 +175,58 @@ describe("usage", () => {
       );
       expect(new Set(identifiers).size).toBe(2);
     });
+
+    it("reports usage under the time it was recorded, not the time it's reported", async () => {
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_1, "ada@example.com");
+      await recordUsage(pool, USER_1, "exports", 1);
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      await pool.query("UPDATE usage_events SET created_at = $1 WHERE user_id = $2", [
+        tenDaysAgo,
+        USER_1,
+      ]);
+
+      await reportUsageToStripe(pool, asStripe(fakeStripe), USER_1);
+
+      const call = fakeStripe.billing.meterEvents.create.mock.calls[0]![0] as {
+        timestamp: number;
+      };
+      expect(call.timestamp).toBe(Math.floor(tenDaysAgo.getTime() / 1000));
+    });
+
+    it("keeps reporting later rows when an earlier row's Stripe call fails", async () => {
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_1, "ada@example.com");
+      await recordUsage(pool, USER_1, "unconfigured-metric", 1);
+      await recordUsage(pool, USER_1, "exports", 1);
+      fakeStripe.billing.meterEvents.create.mockImplementationOnce(async () => {
+        throw new Error("No such meter with event_name unconfigured-metric");
+      });
+
+      const result = await reportUsageToStripe(pool, asStripe(fakeStripe), USER_1);
+
+      expect(result).toEqual({ reported: 1 });
+      expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledTimes(2);
+      // The failed row stays unreported and is retried on the next call
+      // (rather than being permanently stuck ahead of every later row).
+      expect(await getUsageTotal(pool, USER_1, "unconfigured-metric")).toBe(1);
+    });
+
+    it("serializes overlapping report calls for the same user so no row is reported twice", async () => {
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_1, "ada@example.com");
+      await recordUsage(pool, USER_1, "exports", 1);
+      await recordUsage(pool, USER_1, "exports", 1);
+      const realCreate = fakeStripe.billing.meterEvents.create.getMockImplementation()!;
+      fakeStripe.billing.meterEvents.create.mockImplementation(async (...args: unknown[]) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return realCreate(...args);
+      });
+
+      const [first, second] = await Promise.all([
+        reportUsageToStripe(pool, asStripe(fakeStripe), USER_1),
+        reportUsageToStripe(pool, asStripe(fakeStripe), USER_1),
+      ]);
+
+      expect(first.reported + second.reported).toBe(2);
+      expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledTimes(2);
+    });
   });
 });
