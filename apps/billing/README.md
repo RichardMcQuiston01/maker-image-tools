@@ -21,19 +21,21 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 
 ## Environment variables
 
-| Variable                | Required                         | Default | Used by                                                                                  |
-| ----------------------- | -------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `PORT`                  | no                               | `8789`  | server listen port                                                                       |
-| `DATABASE_URL`          | yes                              | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_billing` |
-| `STRIPE_SECRET_KEY`     | yes, for checkout/portal/webhook | —       | Stripe API calls (a free test-mode key works: https://dashboard.stripe.com/apikeys)      |
-| `STRIPE_WEBHOOK_SECRET` | yes, for `/webhook`              | —       | verifies incoming webhook signatures (https://dashboard.stripe.com/webhooks)             |
-| `STRIPE_PRICE_PRO`      | yes, to sell the `pro` plan      | —       | Stripe Price ID for the `pro` plan (https://dashboard.stripe.com/products)               |
+| Variable                | Required                                         | Default | Used by                                                                                  |
+| ----------------------- | ------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------- |
+| `PORT`                  | no                                               | `8789`  | server listen port                                                                       |
+| `DATABASE_URL`          | yes                                              | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_billing` |
+| `STRIPE_SECRET_KEY`     | yes, for checkout/portal/webhook/usage reporting | —       | Stripe API calls (a free test-mode key works: https://dashboard.stripe.com/apikeys)      |
+| `STRIPE_WEBHOOK_SECRET` | yes, for `/webhook`                              | —       | verifies incoming webhook signatures (https://dashboard.stripe.com/webhooks)             |
+| `STRIPE_PRICE_PRO`      | yes, to sell the `pro` plan                      | —       | Stripe Price ID for the `pro` plan (https://dashboard.stripe.com/products)               |
 
 Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
 missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
 be mistaken for a working configuration. The Stripe-backed routes fail the same way if
 `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_PRO` are missing; `GET /subscription` and
-the `/usage` routes don't touch Stripe at all and work without any Stripe env vars.
+`POST`/`GET /usage` don't touch Stripe at all and work without any Stripe env vars, but
+`POST /usage/report` does (it calls Stripe directly) and needs `STRIPE_SECRET_KEY` like the other
+Stripe-backed routes.
 
 ## Local Postgres
 
@@ -59,6 +61,7 @@ then a test Product/Price for the `pro` plan and a webhook endpoint (the Stripe 
 | `GET /subscription`      | `?userId=`                                                                         | `200 { planTier, status, currentPeriodEnd }` — `{ planTier: "free", status: "none", currentPeriodEnd: null }` if the user has no subscription |
 | `POST /usage`            | `{ userId, metric, quantity? }` (`quantity` defaults to `1`)                       | `204`                                                                                                                                         |
 | `GET /usage`             | `?userId=&metric=&since=` (`since` defaults to the start of the current UTC month) | `200 { metric, total }`                                                                                                                       |
+| `POST /usage/report`     | `{ userId }`                                                                       | `200 { reported }` — reports the user's unreported usage to Stripe / `404` if they have no Stripe customer yet                                |
 | `POST /webhook`          | raw Stripe event body, `Stripe-Signature` header                                   | `200 { received: true }` / `400` on a bad/missing signature                                                                                   |
 
 `/webhook` handles `checkout.session.completed`, `customer.subscription.updated`, and
@@ -66,13 +69,36 @@ then a test Product/Price for the `pro` plan and a webhook endpoint (the Stripe 
 in sync with Stripe. Every other event type is a no-op (Stripe sends many event types this service
 doesn't need).
 
+## Usage-based billing
+
+`POST /usage/report`'s `usage.ts`:`reportUsageToStripe` reports a user's not-yet-reported
+`usage_events` rows to Stripe as [Billing Meter events](https://docs.stripe.com/billing/subscriptions/usage-based/recording-usage)
+(`stripe.billing.meterEvents.create`), one event per row, using the row's `metric` as the meter's
+`event_name` — a [Stripe Meter](https://dashboard.stripe.com/meters) configured with that same
+`event_name` and attached to a metered Price is what actually turns these into metered invoice
+line items; that meter/price setup happens on the Stripe dashboard, the same way `STRIPE_PRICE_PRO`
+is a dashboard-created Price ID this service just references. Each reported row's
+`stripe_reported_at` column is set right away, so calling `/usage/report` again only reports usage
+recorded since the last call — nothing is ever double-reported (Stripe's own per-event `identifier`
+also de-dupes server-side within a rolling ~24h window, as a second line of defense). Each call
+holds a Postgres advisory lock for `userId` for its duration, so two overlapping calls for the same
+user never report the same row twice. Nothing calls `/usage/report` automatically yet — it's meant
+to be hit periodically (e.g. a daily cron per active subscriber) once a real deployment wants
+Stripe-side metered invoicing; see "What's not here yet".
+
+Rolling this out onto a deployment that already has `usage_events` history matters: migration
+`002_stripe_usage_reporting.sql` leaves every existing row unreported, so the first `/usage/report`
+call after it lands reports a user's _entire_ history at once, not just new usage — see that
+migration's own comment for the tradeoff and what to do differently for a real rollout.
+
 ## What's not here yet
 
 - **Multiple paid plan tiers** — only `pro` is wired up (`STRIPE_PRICE_PRO`). Adding another tier
   is a matter of adding another entry to `src/plans.ts`'s price-env-var map plus its own env var.
-- **Usage-based billing / metered pricing** — `/usage` just records and totals events; nothing
-  reports usage back to Stripe for metered invoicing yet. Nothing in `apps/web` calls `/usage` yet
-  either — that's a follow-up once a feature actually needs a usage cap.
+- **A scheduler that calls `/usage/report` automatically** — see "Usage-based billing" above: the
+  reporting logic and route exist and are idempotent, but nothing in this repo calls them on a
+  schedule yet (no cron/queue infrastructure exists here), and nothing in `apps/web` calls `/usage`
+  or `/usage/report` yet either — that's a follow-up once a feature actually needs a usage cap.
 - **Failed-payment / dunning emails** — Stripe's own dashboard/portal handles this today; no
   custom notification flow.
 

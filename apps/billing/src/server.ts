@@ -15,7 +15,12 @@ import {
   getSubscriptionStatus,
   NoStripeCustomerError,
 } from "./subscriptions.js";
-import { getUsageTotal, InvalidUsageQuantityError, recordUsage } from "./usage.js";
+import {
+  getUsageTotal,
+  InvalidUsageQuantityError,
+  recordUsage,
+  reportUsageToStripe,
+} from "./usage.js";
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
 
@@ -151,6 +156,14 @@ export function createServer(pool: Pool = createPool(), stripe: Stripe = getStri
           await recordUsage(pool, userId, metric, quantity);
           res.writeHead(204);
           res.end();
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/usage/report") {
+          const body = await parseJsonBody(req);
+          const userId = requireString(body, "userId");
+          const result = await reportUsageToStripe(pool, stripe, userId);
+          sendJson(res, 200, result);
           return;
         }
 

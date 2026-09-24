@@ -16,11 +16,13 @@ export interface FakeStripe {
   checkout: { sessions: { create: ReturnType<typeof vi.fn> } };
   billingPortal: { sessions: { create: ReturnType<typeof vi.fn> } };
   subscriptions: { retrieve: ReturnType<typeof vi.fn> };
+  billing: { meterEvents: { create: ReturnType<typeof vi.fn> } };
   webhooks: { constructEvent: ReturnType<typeof vi.fn> };
 }
 
 export function createFakeStripe(): FakeStripe {
   let customerCounter = 0;
+  let meterEventCounter = 0;
   return {
     customers: {
       create: vi.fn(async ({ email }: { email: string }) => ({
@@ -40,6 +42,17 @@ export function createFakeStripe(): FakeStripe {
     },
     subscriptions: {
       retrieve: vi.fn(async (id: string) => makeFakeSubscription({ id })),
+    },
+    billing: {
+      meterEvents: {
+        create: vi.fn(async (params: { event_name: string; payload: Record<string, string> }) => ({
+          id: `mtr_evt_fake_${++meterEventCounter}`,
+          object: "billing.meter_event",
+          event_name: params.event_name,
+          payload: params.payload,
+          livemode: false,
+        })),
+      },
     },
     webhooks: {
       // Real signature verification is Stripe SDK code, already trusted; this
