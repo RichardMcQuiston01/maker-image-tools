@@ -82,9 +82,19 @@ is a dashboard-created Price ID this service just references. Each reported row'
 recorded since the last call — nothing is ever double-reported (Stripe's own per-event `identifier`
 also de-dupes server-side within a rolling ~24h window, as a second line of defense). Each call
 holds a Postgres advisory lock for `userId` for its duration, so two overlapping calls for the same
-user never report the same row twice. Nothing calls `/usage/report` automatically yet — it's meant
-to be hit periodically (e.g. a daily cron per active subscriber) once a real deployment wants
-Stripe-side metered invoicing; see "What's not here yet".
+user never report the same row twice.
+
+`createServer` also runs this automatically: `usage.ts`'s `reportAllUnreportedUsage` finds every
+user with at least one unreported `usage_events` row and calls `reportUsageToStripe` for each,
+skipping (not failing) a user who has unreported usage but no Stripe customer on file yet — nothing
+to report to until they have one, so their events just wait for a later run. One user's failure
+(Stripe/DB error) is logged and doesn't block reporting for the rest, the same isolation
+`reportUnreportedUsage` already applies per-event, one level up. `createServer` runs this on an
+hourly `setInterval` (`USAGE_REPORT_INTERVAL_MS` in `server.ts`, matching `@maker/accounts`'s
+session-cleanup cadence), `.unref()`'d so it never keeps the process (or a test's event loop) alive,
+and cleared on `server.close()`. There's no separate scheduler process or cron/queue infrastructure
+involved — this mirrors `@maker/accounts`'s expired-session cleanup, an in-process timer set up once
+in `createServer`.
 
 Rolling this out onto a deployment that already has `usage_events` history matters: migration
 `002_stripe_usage_reporting.sql` leaves every existing row unreported, so the first `/usage/report`
@@ -95,12 +105,11 @@ migration's own comment for the tradeoff and what to do differently for a real r
 
 - **Multiple paid plan tiers** — only `pro` is wired up (`STRIPE_PRICE_PRO`). Adding another tier
   is a matter of adding another entry to `src/plans.ts`'s price-env-var map plus its own env var.
-- **A scheduler that calls `/usage/report` automatically** — see "Usage-based billing" above: the
-  reporting logic and route exist and are idempotent, but nothing in this repo calls them on a
-  schedule yet (no cron/queue infrastructure exists here), and nothing in `apps/web` calls `/usage`
-  or `/usage/report` yet either — that's a follow-up once a feature actually needs a usage cap.
 - **Failed-payment / dunning emails** — Stripe's own dashboard/portal handles this today; no
   custom notification flow.
+- **`apps/web` calling `POST /usage`** — usage is now reported to Stripe automatically once
+  recorded (see "Usage-based billing" above), but nothing in `apps/web` calls `POST /usage` itself
+  yet either — that's a follow-up once a feature actually needs a usage cap.
 
 ## Testing note
 

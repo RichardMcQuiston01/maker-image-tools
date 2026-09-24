@@ -6,6 +6,7 @@ import {
   getUsageTotal,
   InvalidUsageQuantityError,
   recordUsage,
+  reportAllUnreportedUsage,
   reportUsageToStripe,
 } from "../src/usage.js";
 import { asStripe, createFakeStripe, type FakeStripe } from "./fakeStripe.js";
@@ -227,6 +228,62 @@ describe("usage", () => {
 
       expect(first.reported + second.reported).toBe(2);
       expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("reportAllUnreportedUsage", () => {
+    let fakeStripe: FakeStripe;
+
+    beforeEach(() => {
+      fakeStripe = createFakeStripe();
+    });
+
+    it("does nothing when there's no unreported usage", async () => {
+      expect(await reportAllUnreportedUsage(pool, asStripe(fakeStripe))).toEqual({
+        usersReported: 0,
+        eventsReported: 0,
+        usersSkipped: 0,
+      });
+      expect(fakeStripe.billing.meterEvents.create).not.toHaveBeenCalled();
+    });
+
+    it("reports unreported usage for every user with a Stripe customer on file", async () => {
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_1, "ada@example.com");
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_2, "grace@example.com");
+      await recordUsage(pool, USER_1, "exports", 2);
+      await recordUsage(pool, USER_2, "exports", 1);
+      await recordUsage(pool, USER_2, "ai-inference-calls", 3);
+
+      const result = await reportAllUnreportedUsage(pool, asStripe(fakeStripe));
+
+      expect(result).toEqual({ usersReported: 2, eventsReported: 3, usersSkipped: 0 });
+      expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledTimes(3);
+      expect(await getUsageTotal(pool, USER_1, "exports")).toBe(2);
+    });
+
+    it("skips (without throwing) a user with unreported usage but no Stripe customer yet", async () => {
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_2, "grace@example.com");
+      await recordUsage(pool, USER_1, "exports", 1); // USER_1 has no Stripe customer
+      await recordUsage(pool, USER_2, "exports", 5);
+
+      const result = await reportAllUnreportedUsage(pool, asStripe(fakeStripe));
+
+      expect(result).toEqual({ usersReported: 1, eventsReported: 1, usersSkipped: 1 });
+      expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledTimes(1);
+      expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledWith(
+        expect.objectContaining({ payload: expect.objectContaining({ value: "5" }) }),
+      );
+    });
+
+    it("doesn't re-report usage a previous run already reported", async () => {
+      await findOrCreateStripeCustomer(pool, asStripe(fakeStripe), USER_1, "ada@example.com");
+      await recordUsage(pool, USER_1, "exports", 1);
+      await reportAllUnreportedUsage(pool, asStripe(fakeStripe));
+
+      const result = await reportAllUnreportedUsage(pool, asStripe(fakeStripe));
+
+      expect(result).toEqual({ usersReported: 0, eventsReported: 0, usersSkipped: 0 });
+      expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledTimes(1);
     });
   });
 });
