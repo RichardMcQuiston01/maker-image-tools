@@ -6,6 +6,7 @@ import {
 import type { Pool } from "pg";
 import Stripe from "stripe";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
+import { MailerConfigError } from "./mailer.js";
 import { UnknownPlanTierError } from "./plans.js";
 import { getStripeClient, getWebhookSecret, StripeConfigError } from "./stripeClient.js";
 import {
@@ -88,7 +89,12 @@ function requireQueryParam(url: URL, field: string): string {
 }
 
 function errorStatus(err: unknown): number {
-  if (err instanceof DatabaseConfigError || err instanceof StripeConfigError) return 500;
+  if (
+    err instanceof DatabaseConfigError ||
+    err instanceof StripeConfigError ||
+    err instanceof MailerConfigError
+  )
+    return 500;
   if (err instanceof UnknownPlanTierError || err instanceof InvalidUsageQuantityError) return 400;
   if (err instanceof NoStripeCustomerError) return 404;
   if (err instanceof Stripe.errors.StripeSignatureVerificationError) return 400;
@@ -202,7 +208,11 @@ export function createServer(pool: Pool = createPool(), stripe: Stripe = getStri
             sendJson(res, 400, { error: "Missing Stripe-Signature header" });
             return;
           }
-          const event = stripe.webhooks.constructEvent(rawBody, signature, getWebhookSecret());
+          const event = await stripe.webhooks.constructEventAsync(
+            rawBody,
+            signature,
+            getWebhookSecret(),
+          );
           await applyStripeWebhookEvent(pool, stripe, event);
           sendJson(res, 200, { received: true });
           return;
