@@ -28,11 +28,14 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 | `STRIPE_SECRET_KEY`     | yes, for checkout/portal/webhook/usage reporting | —       | Stripe API calls (a free test-mode key works: https://dashboard.stripe.com/apikeys)      |
 | `STRIPE_WEBHOOK_SECRET` | yes, for `/webhook`                              | —       | verifies incoming webhook signatures (https://dashboard.stripe.com/webhooks)             |
 | `STRIPE_PRICE_PRO`      | yes, to sell the `pro` plan                      | —       | Stripe Price ID for the `pro` plan (https://dashboard.stripe.com/products)               |
+| `STRIPE_PRICE_STUDIO`   | yes, to sell the `studio` plan                   | —       | Stripe Price ID for the `studio` plan (https://dashboard.stripe.com/products)            |
 
 Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
 missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
 be mistaken for a working configuration. The Stripe-backed routes fail the same way if
-`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_PRO` are missing; `GET /subscription` and
+`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_PRO`/`STRIPE_PRICE_STUDIO` are missing
+(only the plan tier actually being checked out needs its own price env var set - `STRIPE_PRICE_PRO`
+missing doesn't block selling `studio`, and vice versa); `GET /subscription` and
 `POST`/`GET /usage` don't touch Stripe at all and work without any Stripe env vars, but
 `POST /usage/report` does (it calls Stripe directly) and needs `STRIPE_SECRET_KEY` like the other
 Stripe-backed routes.
@@ -101,10 +104,21 @@ Rolling this out onto a deployment that already has `usage_events` history matte
 call after it lands reports a user's _entire_ history at once, not just new usage — see that
 migration's own comment for the tradeoff and what to do differently for a real rollout.
 
+## Plans
+
+Two paid tiers are wired up, `pro` and `studio` (`src/plans.ts`'s `PLAN_PRICE_ENV_VARS`), each with
+its own Stripe Price ID env var (`STRIPE_PRICE_PRO`/`STRIPE_PRICE_STUDIO`) — plus the implicit
+`free` tier every new `@maker/accounts` user starts on, which never needs a Stripe price. Every
+plan-tier-aware route (`POST /checkout-session`, the webhook handlers, `GET /subscription`) is
+already generic over the tier name, so `studio` didn't need any code beyond that one new map entry;
+`apps/cloud-projects`'s `quotas.ts` maps each tier to its own storage limits (see that service's
+README) and `apps/web`'s `BillingPanel` lists a checkout button per paid tier. Adding a further tier
+is the same one-line change to `PLAN_PRICE_ENV_VARS` plus its own env var - the storage-quota and UI
+sides are the only other places a plan tier name currently gets hand-kept in sync (there's no
+shared-schema way to enforce that across services; see the top of this README for why).
+
 ## What's not here yet
 
-- **Multiple paid plan tiers** — only `pro` is wired up (`STRIPE_PRICE_PRO`). Adding another tier
-  is a matter of adding another entry to `src/plans.ts`'s price-env-var map plus its own env var.
 - **Failed-payment / dunning emails** — Stripe's own dashboard/portal handles this today; no
   custom notification flow.
 - **`apps/web` calling `POST /usage`** — usage is now reported to Stripe automatically once

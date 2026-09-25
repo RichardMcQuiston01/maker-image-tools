@@ -52,6 +52,7 @@ describe("BillingPanel", () => {
 
     expect(await screen.findByText(/Current plan: free \(none\)/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Upgrade to Pro" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upgrade to Studio" })).toBeInTheDocument();
     expect(String(fetchMock.mock.calls[1]![0])).toContain(
       `/subscription?userId=${SIGNED_IN_USER.id}`,
     );
@@ -64,6 +65,27 @@ describe("BillingPanel", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         planTier: "pro",
+        status: "active",
+        currentPeriodEnd: "2026-02-01T00:00:00Z",
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <BillingPanel />
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Manage Billing" })).toBeInTheDocument();
+  });
+
+  it("shows a manage-billing button for an active studio subscriber too", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        planTier: "studio",
         status: "active",
         currentPeriodEnd: "2026-02-01T00:00:00Z",
       }),
@@ -103,6 +125,34 @@ describe("BillingPanel", () => {
       userId: SIGNED_IN_USER.id,
       email: SIGNED_IN_USER.email,
       planTier: "pro",
+    });
+  });
+
+  it("requests a checkout session for studio when that tier is chosen", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { planTier: "free", status: "none", currentPeriodEnd: null }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { url: "https://checkout.stripe.com/pay/fake" }),
+    );
+
+    render(
+      <AuthProvider>
+        <BillingPanel />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Upgrade to Studio" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchMock.mock.calls[2]!;
+    expect(String(url)).toContain("/checkout-session");
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      userId: SIGNED_IN_USER.id,
+      email: SIGNED_IN_USER.email,
+      planTier: "studio",
     });
   });
 
