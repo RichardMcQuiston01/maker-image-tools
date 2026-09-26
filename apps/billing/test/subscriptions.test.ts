@@ -9,7 +9,14 @@ import {
   NoStripeCustomerError,
 } from "../src/subscriptions.js";
 import { UnknownPlanTierError } from "../src/plans.js";
-import { asStripe, createFakeStripe, makeFakeSubscription, type FakeStripe } from "./fakeStripe.js";
+import {
+  asStripe,
+  createFakeStripe,
+  makeFakeInvoice,
+  makeFakeSubscription,
+  type FakeStripe,
+} from "./fakeStripe.js";
+import { startFakeMailProvider, type FakeMailProvider } from "./fakeMailProvider.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 // apps/accounts assigns real users a Postgres-generated UUID; `user_id` here
@@ -182,6 +189,45 @@ describe("subscriptions", () => {
           data: { object: {} },
         } as never),
       ).resolves.toBeUndefined();
+    });
+
+    describe("invoice.payment_failed", () => {
+      const ENV_KEYS = ["MAIL_API_KEY", "MAIL_FROM_ADDRESS", "MAIL_API_URL"] as const;
+      let provider: FakeMailProvider;
+      const originalMailEnv: Record<string, string | undefined> = {};
+
+      beforeEach(async () => {
+        for (const key of ENV_KEYS) originalMailEnv[key] = process.env[key];
+        provider = await startFakeMailProvider();
+        process.env.MAIL_API_KEY = "fake-mail-api-key";
+        process.env.MAIL_FROM_ADDRESS = "billing@example.com";
+        process.env.MAIL_API_URL = provider.baseUrl;
+      });
+
+      afterEach(async () => {
+        await provider.close();
+        for (const key of ENV_KEYS) {
+          if (originalMailEnv[key] === undefined) delete process.env[key];
+          else process.env[key] = originalMailEnv[key];
+        }
+      });
+
+      it("sends a dunning email via the webhook route's dispatch", async () => {
+        const customerId = await findOrCreateStripeCustomer(
+          pool,
+          asStripe(fakeStripe),
+          USER_1,
+          "ada@example.com",
+        );
+
+        await applyStripeWebhookEvent(pool, asStripe(fakeStripe), {
+          type: "invoice.payment_failed",
+          data: { object: makeFakeInvoice({ customer: customerId }) },
+        } as never);
+
+        expect(provider.sent).toHaveLength(1);
+        expect(provider.sent[0]!.to).toBe("ada@example.com");
+      });
     });
   });
 });

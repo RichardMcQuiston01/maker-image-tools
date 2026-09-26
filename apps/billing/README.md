@@ -29,6 +29,8 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 | `STRIPE_WEBHOOK_SECRET` | yes, for `/webhook`                              | —       | verifies incoming webhook signatures (https://dashboard.stripe.com/webhooks)             |
 | `STRIPE_PRICE_PRO`      | yes, to sell the `pro` plan                      | —       | Stripe Price ID for the `pro` plan (https://dashboard.stripe.com/products)               |
 | `STRIPE_PRICE_STUDIO`   | yes, to sell the `studio` plan                   | —       | Stripe Price ID for the `studio` plan (https://dashboard.stripe.com/products)            |
+| `MAIL_API_KEY`          | yes, for dunning emails                          | —       | API key for the email provider (see "Failed-payment / dunning emails" below)             |
+| `MAIL_FROM_ADDRESS`     | yes, for dunning emails                          | —       | the `From` address on dunning emails this service sends                                  |
 
 Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
 missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
@@ -38,7 +40,10 @@ be mistaken for a working configuration. The Stripe-backed routes fail the same 
 missing doesn't block selling `studio`, and vice versa); `GET /subscription` and
 `POST`/`GET /usage` don't touch Stripe at all and work without any Stripe env vars, but
 `POST /usage/report` does (it calls Stripe directly) and needs `STRIPE_SECRET_KEY` like the other
-Stripe-backed routes.
+Stripe-backed routes. `POST /webhook` needs `MAIL_API_KEY`/`MAIL_FROM_ADDRESS` too, but only when the
+event it's processing is an `invoice.payment_failed` that actually has a recipient to email —
+`checkout.session.completed`/`customer.subscription.updated`/`customer.subscription.deleted` never
+touch the mailer at all.
 
 ## Local Postgres
 
@@ -67,10 +72,15 @@ then a test Product/Price for the `pro` plan and a webhook endpoint (the Stripe 
 | `POST /usage/report`     | `{ userId }`                                                                       | `200 { reported }` — reports the user's unreported usage to Stripe / `404` if they have no Stripe customer yet                                |
 | `POST /webhook`          | raw Stripe event body, `Stripe-Signature` header                                   | `200 { received: true }` / `400` on a bad/missing signature                                                                                   |
 
-`/webhook` handles `checkout.session.completed`, `customer.subscription.updated`, and
-`customer.subscription.deleted` — the three events needed to keep the local `subscriptions` table
-in sync with Stripe. Every other event type is a no-op (Stripe sends many event types this service
-doesn't need).
+`/webhook` verifies the signature with the Stripe SDK's `constructEventAsync` rather than
+`constructEvent` — the synchronous form's crypto provider doesn't work under Bun (it throws
+`SubtleCryptoProvider cannot be used in a synchronous context`), a gap none of the existing tests
+caught since they fake the whole Stripe client and never exercise real signature verification.
+
+`/webhook` handles `checkout.session.completed`, `customer.subscription.updated`,
+`customer.subscription.deleted` (keeping the local `subscriptions` table in sync with Stripe), and
+`invoice.payment_failed` (sending a dunning email — see "Failed-payment / dunning emails" below).
+Every other event type is a no-op (Stripe sends many event types this service doesn't need).
 
 ## Usage-based billing
 
@@ -117,10 +127,32 @@ is the same one-line change to `PLAN_PRICE_ENV_VARS` plus its own env var - the 
 sides are the only other places a plan tier name currently gets hand-kept in sync (there's no
 shared-schema way to enforce that across services; see the top of this README for why).
 
+## Failed-payment / dunning emails
+
+`dunning.ts`'s `handleInvoicePaymentFailed` runs on `/webhook`'s `invoice.payment_failed` event and
+emails the customer that a payment didn't go through, using `mailer.ts`'s `sendMail` — a plain
+`fetch` POST to Resend's REST API (`MAIL_API_URL`, defaulting to `https://api.resend.com/emails`),
+copied from `@maker/accounts`'s mailer of the same name rather than shared (there's no shared
+package in this monorepo — see the top of this README for why cross-service code isn't shared that
+way). It fails fast (`MailerConfigError`) if `MAIL_API_KEY`/`MAIL_FROM_ADDRESS` aren't set, matching
+every other external-service client in this repo.
+
+The recipient comes from the invoice's own `customer_email` field — this service has nowhere else
+to look, since `customers.ts` never stores an email address locally (see the top of this README).
+A Stripe customer this service doesn't track locally (e.g. test-mode noise from an unrelated Stripe
+account posting to the same webhook endpoint), or an invoice with no `customer_email` at all, is
+silently skipped rather than treated as an error.
+
+Stripe fires `invoice.payment_failed` once per retry attempt on the same invoice (not just once per
+invoice), so each attempt gets its own email — but Stripe's webhooks are also at-least-once, so a
+redelivery of the exact same attempt must not send a duplicate. Migration `003_dunning_emails.sql`'s
+`dunning_emails` table guards this: the `(invoice id, attempt count)` pair is inserted inside the
+same transaction as the send and only kept if the send actually succeeds (rolled back on a send
+failure), so a failed send leaves that attempt eligible for a real retry instead of silently losing
+the notification, while a successful send is never repeated.
+
 ## What's not here yet
 
-- **Failed-payment / dunning emails** — Stripe's own dashboard/portal handles this today; no
-  custom notification flow.
 - **`apps/web` calling `POST /usage`** — usage is now reported to Stripe automatically once
   recorded (see "Usage-based billing" above), but nothing in `apps/web` calls `POST /usage` itself
   yet either — that's a follow-up once a feature actually needs a usage cap.

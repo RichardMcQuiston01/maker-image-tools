@@ -17,7 +17,7 @@ export interface FakeStripe {
   billingPortal: { sessions: { create: ReturnType<typeof vi.fn> } };
   subscriptions: { retrieve: ReturnType<typeof vi.fn> };
   billing: { meterEvents: { create: ReturnType<typeof vi.fn> } };
-  webhooks: { constructEvent: ReturnType<typeof vi.fn> };
+  webhooks: { constructEventAsync: ReturnType<typeof vi.fn> };
 }
 
 export function createFakeStripe(): FakeStripe {
@@ -57,7 +57,10 @@ export function createFakeStripe(): FakeStripe {
     webhooks: {
       // Real signature verification is Stripe SDK code, already trusted; this
       // just parses the raw body so tests can exercise the route wiring.
-      constructEvent: vi.fn((rawBody: Buffer | string) =>
+      // Async to match the real SDK's constructEventAsync, which server.ts
+      // uses because Bun's crypto provider can't run constructEvent's
+      // synchronous path (see this service's README).
+      constructEventAsync: vi.fn(async (rawBody: Buffer | string) =>
         JSON.parse(typeof rawBody === "string" ? rawBody : rawBody.toString("utf-8")),
       ),
     },
@@ -91,4 +94,35 @@ export function makeFakeSubscription(
     current_period_end: currentPeriodEnd,
     items: { data: [{ price: { id: priceId } }] },
   } as unknown as Stripe.Subscription;
+}
+
+export function makeFakeInvoice(
+  overrides: {
+    id?: string;
+    customer?: string;
+    customerEmail?: string | null;
+    attemptCount?: number;
+    amountDue?: number;
+    nextPaymentAttempt?: number | null;
+    hostedInvoiceUrl?: string | null;
+  } = {},
+): Stripe.Invoice {
+  const {
+    id = "in_fake_1",
+    customer = "cus_fake_1",
+    customerEmail = "ada@example.com",
+    attemptCount = 1,
+    amountDue = 1000,
+    nextPaymentAttempt = Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60,
+    hostedInvoiceUrl = "https://invoice.stripe.com/i/fake",
+  } = overrides;
+  return {
+    id,
+    customer,
+    customer_email: customerEmail,
+    attempt_count: attemptCount,
+    amount_due: amountDue,
+    next_payment_attempt: nextPaymentAttempt,
+    hosted_invoice_url: hostedInvoiceUrl,
+  } as unknown as Stripe.Invoice;
 }
