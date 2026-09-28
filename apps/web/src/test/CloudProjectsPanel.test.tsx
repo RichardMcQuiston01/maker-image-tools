@@ -605,6 +605,49 @@ describe("CloudProjectsPanel", () => {
     expect(screen.queryByText(/updated by a collaborator/)).not.toBeInTheDocument();
   });
 
+  it("shows who else is viewing the loaded project, excluding the signed-in user themself", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Mine",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: { layers: [] } } }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Load" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit({ type: "project", project: { data: {} } }); // initial state
+    source.emit({ type: "presence", viewers: [SIGNED_IN_USER.id] });
+
+    expect(
+      await screen.findByText("You're the only one viewing this project right now."),
+    ).toBeInTheDocument();
+
+    const OTHER_USER_ID = "22222222-2222-2222-2222-222222222222";
+    source.emit({ type: "presence", viewers: [SIGNED_IN_USER.id, OTHER_USER_ID] });
+
+    expect(await screen.findByText(`Also viewing: ${OTHER_USER_ID}`)).toBeInTheDocument();
+    expect(
+      screen.queryByText("You're the only one viewing this project right now."),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a dismissible notice when the loaded project is deleted elsewhere", async () => {
     window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);

@@ -26,7 +26,20 @@ interface Collaborator {
 type LiveEvent =
   | { type: "project"; project: { data: VectorDocument } }
   | { type: "deleted" }
-  | { type: "collaborators"; collaborators: Collaborator[] };
+  | { type: "collaborators"; collaborators: Collaborator[] }
+  | { type: "presence"; viewers: string[] };
+
+/**
+ * Renders the "who else is looking at this" line for the project currently
+ * open in the editor - `viewers` always includes the signed-in user
+ * themself (the server counts every open `/live` connection, including
+ * this one), so this filters `selfId` out before deciding what to show.
+ */
+function describePresence(viewers: string[], selfId: string | undefined): string {
+  const others = viewers.filter((id) => id !== selfId);
+  if (others.length === 0) return "You're the only one viewing this project right now.";
+  return `Also viewing: ${others.join(", ")}`;
+}
 
 /**
  * Fetches a project's thumbnail with the caller's bearer token (an <img
@@ -127,6 +140,7 @@ export function CloudProjectsPanel({
   // for the project actually open right now.
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const [liveNotice, setLiveNotice] = useState<"updated" | "deleted" | null>(null);
+  const [viewersByProject, setViewersByProject] = useState<Record<string, string[]>>({});
 
   const refreshProjects = useCallback(async (sessionToken: string) => {
     try {
@@ -252,9 +266,17 @@ export function CloudProjectsPanel({
           ...current,
           [loadedProjectId]: parsed.collaborators,
         }));
+      } else if (parsed.type === "presence") {
+        setViewersByProject((current) => ({ ...current, [loadedProjectId]: parsed.viewers }));
       }
     };
-    return () => source.close();
+    return () => {
+      source.close();
+      setViewersByProject((current) => {
+        const { [loadedProjectId]: _removed, ...rest } = current;
+        return rest;
+      });
+    };
   }, [loadedProjectId, token]);
 
   const handleReloadLive = useCallback(() => {
@@ -555,6 +577,11 @@ export function CloudProjectsPanel({
               <span>{project.name}</span>
               {project.role === "collaborator" && (
                 <span className="ai-panel__hint">Shared with you</span>
+              )}
+              {loadedProjectId === project.id && viewersByProject[project.id] && (
+                <p className="ai-panel__hint cloud-projects-panel__presence">
+                  {describePresence(viewersByProject[project.id]!, user?.id)}
+                </p>
               )}
               <div className="ai-panel__actions">
                 <button type="button" disabled={busy} onClick={() => void handleLoad(project.id)}>

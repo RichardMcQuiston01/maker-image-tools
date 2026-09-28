@@ -146,11 +146,12 @@ without it having to separately track "is this my project" itself.
 `GET /projects/:id/live` is a `text/event-stream` (Server-Sent Events) connection: on connect it
 immediately sends the project's current state as one `{ "type": "project", "project": {...} }`
 message, then a further message of the same shape every time _anyone_ (owner or any collaborator)
-successfully `PUT`s the project, plus `{ "type": "deleted" }` if it's deleted and
-`{ "type": "collaborators", "collaborators": [...] }` when the collaborator list changes. This is
-how `apps/web` notices a collaborator's save without polling - see its `CloudProjectsPanel` for how
-it surfaces this as a dismissible "updated elsewhere, reload?" banner rather than silently
-overwriting whatever's open in the editor.
+successfully `PUT`s the project, plus `{ "type": "deleted" }` if it's deleted,
+`{ "type": "collaborators", "collaborators": [...] }` when the collaborator list changes, and
+`{ "type": "presence", "viewers": [...] }` whenever a viewer connects or disconnects (see
+"Presence" below). This is how `apps/web` notices a collaborator's save without polling - see its
+`CloudProjectsPanel` for how it surfaces this as a dismissible "updated elsewhere, reload?" banner
+rather than silently overwriting whatever's open in the editor.
 
 This is deliberately last-write-wins broadcast, not operational-transform/CRDT-style merging -
 concurrent edits to the same project still just overwrite each other on `PUT`, the same as before
@@ -161,6 +162,23 @@ subscriber registry is in-memory and per-process (`Map<projectId, Set<ServerResp
 for this service's single-dev-server-instance scope like every other `apps/*` service in this
 repo, but a multi-replica production deployment would need a real pub/sub backend (e.g. Redis) to
 fan a write on one instance out to viewers connected to another.
+
+## Presence
+
+Every open `/live` connection is tagged with the userId it was authenticated as (`liveUpdates.ts`'s
+subscriber registry maps each connection to a userId, not just tracking a bare count), so alongside
+project/collaborator/delete broadcasts the same stream also carries
+`{ "type": "presence", "viewers": [userId, ...] }` - the distinct set of userIds currently watching
+this project, sent right after a viewer connects and again right after one disconnects. The
+connecting/disconnecting viewer is included in their own broadcast (the server doesn't special-case
+"everyone but me"); `apps/web`'s `CloudProjectsPanel` filters its own signed-in user id out client-side
+before rendering an "also viewing: ..." line, the same raw-userId display convention "Collaborators"
+above already uses (no email is resolved). Two connections for the same user (e.g. two browser tabs)
+only ever count once - the viewer list is deduplicated by userId, not by connection.
+
+This shares the same in-memory, per-process limitation "Live updates" describes: a multi-replica
+deployment would need viewer state kept in a shared store (e.g. Redis) rather than a plain in-process
+`Map`, so that a viewer connected to one instance is visible to a viewer connected to another.
 
 ## Storage quotas
 
@@ -203,11 +221,10 @@ included.
   shared write access and a last-write-wins broadcast of each save, but two people editing the same
   project at the same moment still just overwrite each other on `PUT`; there's no operational
   transform/CRDT merging of concurrent, in-flight changes the way e.g. Google Docs has.
-- **Presence** ("who else is viewing this right now") — the live-updates stream broadcasts project
-  changes, not who's currently connected to it.
-- **Multi-instance live updates** — see "Live updates" above; `liveUpdates.ts`'s subscriber registry
-  is per-process, so a deployment with more than one `apps/cloud-projects` instance behind a load
-  balancer would need a shared pub/sub backend for a save on one instance to reach a viewer
+- **Multi-instance live updates** — see "Live updates"/"Presence" above; `liveUpdates.ts`'s
+  subscriber registry (and the presence it now also tracks) is per-process, so a deployment with
+  more than one `apps/cloud-projects` instance behind a load balancer would need a shared pub/sub
+  backend for a save (or a viewer connecting/disconnecting) on one instance to reach a viewer
   connected to another.
 
 ## Testing note

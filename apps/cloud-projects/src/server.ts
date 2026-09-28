@@ -13,7 +13,7 @@ import {
   removeCollaborator,
 } from "./collaborators.js";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
-import { publish, subscribe, unsubscribe } from "./liveUpdates.js";
+import { currentViewers, publish, subscribe, unsubscribe } from "./liveUpdates.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import {
   createProject,
@@ -325,7 +325,11 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
             Connection: "keep-alive",
           });
           res.write(`data: ${JSON.stringify({ type: "project", project })}\n\n`);
-          subscribe(projectId, res);
+          subscribe(projectId, userId, res);
+          // Broadcasts the updated viewer list to everyone watching this
+          // project, including the connection that just opened - see
+          // README's "Presence" section.
+          publish(projectId, { type: "presence", viewers: currentViewers(projectId) });
           // Keeps intermediary proxies/load balancers from timing out an
           // idle connection; unref'd so it never keeps the process (or a
           // test's event loop) alive on its own.
@@ -334,6 +338,7 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
           req.on("close", () => {
             clearInterval(heartbeat);
             unsubscribe(projectId, res);
+            publish(projectId, { type: "presence", viewers: currentViewers(projectId) });
           });
           return;
         }
