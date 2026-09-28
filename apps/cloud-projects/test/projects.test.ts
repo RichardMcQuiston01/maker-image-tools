@@ -134,6 +134,55 @@ describe("projects", () => {
     expect(rewritten.data).toEqual({ v: 2 });
   });
 
+  it("merges data via baseData instead of blindly replacing it when someone else wrote first", async () => {
+    const base = {
+      objects: [
+        { id: "o1", value: "v1" },
+        { id: "o2", value: "v1" },
+      ],
+    };
+    const project = await createProject(pool, store, USER_1, "Original", base, FREE_QUOTA);
+
+    await updateProject(
+      pool,
+      store,
+      USER_1,
+      project.id,
+      {
+        data: {
+          objects: [
+            { id: "o1", value: "v1" },
+            { id: "o2", value: "edited first" },
+          ],
+        },
+      },
+      withQuota(FREE_QUOTA),
+    );
+
+    const merged = await updateProject(
+      pool,
+      store,
+      USER_1,
+      project.id,
+      {
+        data: {
+          objects: [
+            { id: "o1", value: "edited second" },
+            { id: "o2", value: "v1" },
+          ],
+        },
+        baseData: base,
+      },
+      withQuota(FREE_QUOTA),
+    );
+    expect(merged.data).toEqual({
+      objects: [
+        { id: "o1", value: "edited second" },
+        { id: "o2", value: "edited first" },
+      ],
+    });
+  });
+
   it("rejects renaming to a blank name", async () => {
     const project = await createProject(pool, store, USER_1, "Original", { v: 1 }, FREE_QUOTA);
     await expect(

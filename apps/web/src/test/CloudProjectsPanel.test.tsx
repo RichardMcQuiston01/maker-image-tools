@@ -293,6 +293,78 @@ describe("CloudProjectsPanel", () => {
     await waitFor(() => expect(onLoadDocument).toHaveBeenCalledWith(projectData));
   });
 
+  it("saves changes back to the loaded project, sending along the fetched base data for merging", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    const projectData: VectorDocument = { layers: [], objects: [] };
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "My Design",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: projectData } }));
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Load" }));
+    const saveChangesButton = await screen.findByRole("button", { name: "Save changes" });
+
+    const mergedData: VectorDocument = { layers: [], objects: [{ id: "o1" } as never] };
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: mergedData } }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { projects: [] }));
+    fireEvent.click(saveChangesButton);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    const [url, init] = fetchMock.mock.calls[3]!;
+    expect(String(url)).toBe("http://localhost:8790/projects/p1");
+    expect(init?.method).toBe("PUT");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect(JSON.parse(String(init?.body))).toEqual({ data: EMPTY_DOC, baseData: projectData });
+  });
+
+  it("shows Save changes only for the currently loaded project, and lets a collaborator use it too", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        projects: [
+          {
+            id: "p1",
+            name: "Shared With Me",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            role: "collaborator",
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <CloudProjectsPanel document={EMPTY_DOC} onLoadDocument={vi.fn()} />
+      </AuthProvider>,
+    );
+    await screen.findByText("Shared With Me");
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { project: { data: EMPTY_DOC } }));
+    fireEvent.click(screen.getByRole("button", { name: "Load" }));
+
+    expect(await screen.findByRole("button", { name: "Save changes" })).toBeInTheDocument();
+  });
+
   it("deletes a project and refreshes the list", async () => {
     window.localStorage.setItem("maker.accounts.token", "test-token");
     const fetchMock = vi.mocked(fetch);

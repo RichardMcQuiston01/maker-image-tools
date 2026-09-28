@@ -378,7 +378,7 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
               store,
               userId,
               projectId,
-              { name: optionalString(body, "name"), data: body.data },
+              { name: optionalString(body, "name"), data: body.data, baseData: body.baseData },
               (ownerId) => getPlanTier(ownerId).then(quotaForPlanTier),
             );
             publish(projectId, { type: "project", project });
