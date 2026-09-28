@@ -501,6 +501,10 @@ describe("cloud-projects server", () => {
         expect(first.type).toBe("project");
         expect(first.project.data).toEqual({ v: 1 });
 
+        const presence = (await live.nextEvent()) as { type: string; viewers: string[] };
+        expect(presence.type).toBe("presence");
+        expect(presence.viewers).toEqual([USER_1]);
+
         const putResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
           method: "PUT",
           headers: authHeaders(TOKEN_1),
@@ -527,6 +531,7 @@ describe("cloud-projects server", () => {
       const live = await connectLive(TOKEN_2, created.project.id);
       try {
         await live.nextEvent(); // initial state
+        await live.nextEvent(); // presence broadcast on connect
 
         const deleteResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
           method: "DELETE",
@@ -538,6 +543,41 @@ describe("cloud-projects server", () => {
         expect(event.type).toBe("deleted");
       } finally {
         live.close();
+      }
+    });
+
+    it("broadcasts an updated viewer list when a second viewer connects, and again when one disconnects", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      await fetch(`${baseUrl}/projects/${created.project.id}/collaborators`, {
+        method: "POST",
+        headers: authHeaders(TOKEN_1),
+        body: JSON.stringify({ userId: USER_2 }),
+      });
+
+      const first = await connectLive(TOKEN_1, created.project.id);
+      try {
+        await first.nextEvent(); // initial state
+        const soloPresence = (await first.nextEvent()) as { type: string; viewers: string[] };
+        expect(soloPresence.type).toBe("presence");
+        expect(soloPresence.viewers).toEqual([USER_1]);
+
+        const second = await connectLive(TOKEN_2, created.project.id);
+        try {
+          await second.nextEvent(); // initial state
+          await second.nextEvent(); // presence, sent to the connection that just opened too
+
+          const bothPresence = (await first.nextEvent()) as { type: string; viewers: string[] };
+          expect(bothPresence.type).toBe("presence");
+          expect(bothPresence.viewers).toEqual([USER_1, USER_2]);
+        } finally {
+          second.close();
+        }
+
+        const soloAgain = (await first.nextEvent()) as { type: string; viewers: string[] };
+        expect(soloAgain.type).toBe("presence");
+        expect(soloAgain.viewers).toEqual([USER_1]);
+      } finally {
+        first.close();
       }
     });
 
