@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
+import { mergeProjectData } from "./crdtMerge.js";
 import {
   deleteProjectData,
   getProjectData,
@@ -207,6 +208,15 @@ export async function getProject(
 export interface ProjectChanges {
   name?: string | undefined;
   data?: unknown;
+  /**
+   * The `data` this caller fetched before making these edits. When present,
+   * `data` is merged against whatever's currently stored (per-id, via
+   * `crdtMerge.ts`) instead of blindly replacing it - see README's
+   * "Collaborative merging" section. Omit it (or when the caller's fetch and
+   * what's currently stored are identical, i.e. nobody else wrote in
+   * between) to fall back to a plain replace, the original behavior.
+   */
+  baseData?: unknown;
 }
 
 /**
@@ -228,8 +238,16 @@ export async function updateProject(
   if (changes.name !== undefined) {
     validateName(changes.name);
   }
-  if (changes.data !== undefined) {
-    const dataBytes = Buffer.byteLength(JSON.stringify(changes.data), "utf-8");
+
+  const key = projectStorageKey(row.user_id, row.id);
+  let dataToStore = changes.data;
+  if (changes.data !== undefined && changes.baseData !== undefined) {
+    const currentData = await getProjectData(store, key);
+    dataToStore = mergeProjectData(changes.baseData, changes.data, currentData);
+  }
+
+  if (dataToStore !== undefined) {
+    const dataBytes = Buffer.byteLength(JSON.stringify(dataToStore), "utf-8");
     const quota = await getQuota(row.user_id);
     await assertWithinQuota(pool, row.user_id, quota, dataBytes, row.id);
   }
@@ -240,12 +258,11 @@ export async function updateProject(
   );
   const updated = rows[0]!;
 
-  const key = projectStorageKey(row.user_id, row.id);
-  if (changes.data !== undefined) {
-    const size = await putProjectData(store, key, changes.data);
+  if (dataToStore !== undefined) {
+    const size = await putProjectData(store, key, dataToStore);
     await pool.query("UPDATE projects SET data_size_bytes = $1 WHERE id = $2", [size, row.id]);
   }
-  const data = changes.data !== undefined ? changes.data : await getProjectData(store, key);
+  const data = dataToStore !== undefined ? dataToStore : await getProjectData(store, key);
   return { ...toSummary(updated), role: roleFor(updated, userId), data };
 }
 
