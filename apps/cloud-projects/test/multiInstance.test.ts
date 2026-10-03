@@ -83,8 +83,27 @@ async function spawnInstance(env: Record<string, string>): Promise<Instance> {
     });
   });
 
+  const baseUrl = `http://127.0.0.1:${port}`;
+  // "ready" only means the child's `server.listen()` callback fired - under
+  // CI's heavier load, the very first real connection to a just-bound port
+  // can still occasionally race the OS finishing setup and come back as a
+  // reset ("fetch failed" / "other side closed") rather than a response.
+  // `OPTIONS` is answered by `server.ts` before it ever touches the
+  // database, so retrying it is a cheap, side-effect-free way to confirm the
+  // instance is actually ready to accept connections before any test sends
+  // it real traffic.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fetch(baseUrl, { method: "OPTIONS" });
+      break;
+    } catch (err) {
+      if (attempt >= 20) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
   return {
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl,
     async stop() {
       await new Promise<void>((resolve) => {
         child.once("exit", () => resolve());
