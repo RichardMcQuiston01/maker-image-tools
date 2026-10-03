@@ -13,7 +13,13 @@ import {
   removeCollaborator,
 } from "./collaborators.js";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
-import { currentViewers, publish, subscribe, unsubscribe } from "./liveUpdates.js";
+import {
+  currentViewers,
+  publish,
+  startCrossInstanceRelay,
+  subscribe,
+  unsubscribe,
+} from "./liveUpdates.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import {
   createProject,
@@ -21,6 +27,7 @@ import {
   deleteProject,
   deleteThumbnail,
   getProject,
+  getProjectForRelay,
   getSharedProject,
   getSharedThumbnail,
   getThumbnail,
@@ -170,10 +177,22 @@ const LIVE_RE = /^\/projects\/([^/]+)\/live$/;
 const SHARED_RE = /^\/shared\/([^/]+)$/;
 const SHARED_THUMBNAIL_RE = /^\/shared\/([^/]+)\/thumbnail$/;
 
-export function createServer(pool: Pool = createPool(), store: ObjectStore = getObjectStore()) {
+export function createServer(
+  pool: Pool = createPool(),
+  store: ObjectStore = getObjectStore(),
+  relayOptions?: { heartbeatMs?: number; staleAfterMs?: number },
+) {
   const migrationsReady = runMigrations(pool);
+  const relayReady = startCrossInstanceRelay(
+    pool,
+    (projectId) => getProjectForRelay(pool, store, projectId),
+    relayOptions,
+  ).catch((err: unknown) => {
+    console.error("cross-instance live-update relay failed to start", err);
+    return null;
+  });
 
-  return createHttpServer((req, res) => {
+  const httpServer = createHttpServer((req, res) => {
     setCorsHeaders(res);
 
     if (req.method === "OPTIONS") {
@@ -404,4 +423,10 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
         sendJson(res, errorStatus(err), { error: message });
       });
   });
+
+  httpServer.on("close", () => {
+    relayReady.then((relay) => relay?.stop()).catch(() => {});
+  });
+
+  return httpServer;
 }

@@ -205,6 +205,30 @@ export async function getProject(
   return { ...toSummary(row), role: roleFor(row, userId), data };
 }
 
+/**
+ * A project by id, with no access check and no caller-relative `role` - used
+ * by the cross-instance live-update relay (`liveUpdates.ts`) to re-fetch a
+ * project's full current state after a `NOTIFY` tells it something changed
+ * on another instance, where there's no calling user to check access for or
+ * compute a `role` against. Returns `undefined` if the project no longer
+ * exists (e.g. it was deleted before this instance got around to the
+ * refetch) rather than throwing - the relay treats that as nothing to
+ * broadcast, not an error.
+ */
+export async function getProjectForRelay(
+  pool: Pool,
+  store: ObjectStore,
+  projectId: string,
+): Promise<Project | undefined> {
+  const { rows } = await pool.query<ProjectRow>("SELECT * FROM projects WHERE id = $1", [
+    projectId,
+  ]);
+  const row = rows[0];
+  if (!row) return undefined;
+  const data = await getProjectData(store, projectStorageKey(row.user_id, row.id));
+  return { ...toSummary(row), data };
+}
+
 export interface ProjectChanges {
   name?: string | undefined;
   data?: unknown;
