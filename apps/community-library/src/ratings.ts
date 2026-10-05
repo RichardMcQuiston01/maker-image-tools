@@ -44,6 +44,9 @@ export class InvalidRatingInputError extends Error {}
 /** Thrown when a listing's own submitter tries to rate it - rating your own listing to inflate its score is the obvious abuse case a same-user check closes. */
 export class SelfRatingNotAllowedError extends Error {}
 
+/** Thrown when a user tries to rate a listing they've never loaded into the editor - see "Rating abuse handling" in the README. */
+export class ListingNotUsedError extends Error {}
+
 /** Thrown when a user has rated too many distinct listings too recently - see RATE_LIMIT_* below. */
 export class RatingRateLimitedError extends Error {}
 
@@ -104,6 +107,14 @@ export async function rateListing(
     }
     if (listingRow.user_id === userId) {
       throw new SelfRatingNotAllowedError("You can't rate your own listing");
+    }
+
+    const { rowCount: importCount } = await client.query(
+      `SELECT 1 FROM listing_imports WHERE listing_id = $1 AND user_id = $2`,
+      [listingId, userId],
+    );
+    if (!importCount) {
+      throw new ListingNotUsedError("Load this design before rating it");
     }
 
     const { rows: recentRows } = await client.query<{ count: string }>(
