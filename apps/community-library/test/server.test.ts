@@ -67,6 +67,14 @@ describe("community-library server", () => {
     });
   }
 
+  function importListing(id: string, userId: string) {
+    return fetch(`${baseUrl}/listings/${id}/imports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+  }
+
   it("publishes a listing and returns 201", async () => {
     const response = await publish();
     expect(response.status).toBe(201);
@@ -180,9 +188,34 @@ describe("community-library server", () => {
     expect(getResponse.status).toBe(404);
   });
 
+  it("records an import, idempotently, and 404s for an unknown listing", async () => {
+    const created = await (await publish()).json();
+
+    const first = await importListing(created.listing.id, USER_2);
+    expect(first.status).toBe(204);
+    const second = await importListing(created.listing.id, USER_2);
+    expect(second.status).toBe(204);
+
+    const unknown = await importListing("00000000-0000-0000-0000-000000000000", USER_2);
+    expect(unknown.status).toBe(404);
+  });
+
+  it("rejects rating a listing the user hasn't loaded, with 403", async () => {
+    const created = await (await publish()).json();
+    await approve(created.listing.id);
+
+    const response = await fetch(`${baseUrl}/listings/${created.listing.id}/ratings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: USER_2, stars: 5 }),
+    });
+    expect(response.status).toBe(403);
+  });
+
   it("rates a listing and returns the updated aggregate", async () => {
     const created = await (await publish()).json();
     await approve(created.listing.id);
+    await importListing(created.listing.id, USER_2);
 
     const response = await fetch(`${baseUrl}/listings/${created.listing.id}/ratings`, {
       method: "POST",
@@ -203,6 +236,7 @@ describe("community-library server", () => {
   it("rejects rating your own listing with 403", async () => {
     const created = await (await publish()).json();
     await approve(created.listing.id);
+    await importListing(created.listing.id, USER_1);
 
     const response = await fetch(`${baseUrl}/listings/${created.listing.id}/ratings`, {
       method: "POST",
@@ -215,6 +249,7 @@ describe("community-library server", () => {
   it("rejects an out-of-range rating with 400", async () => {
     const created = await (await publish()).json();
     await approve(created.listing.id);
+    await importListing(created.listing.id, USER_2);
 
     const response = await fetch(`${baseUrl}/listings/${created.listing.id}/ratings`, {
       method: "POST",

@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import type { ObjectStore } from "../src/objectStorage.js";
+import { recordListingImport } from "../src/imports.js";
 import { approveListing, ListingNotFoundError, publishListing } from "../src/listings.js";
 import {
   InvalidRatingInputError,
+  ListingNotUsedError,
   listRatings,
   RatingRateLimitedError,
   rateListing,
@@ -47,10 +49,23 @@ describe("ratings", () => {
     return approveListing(pool, listing.id, REVIEWER);
   }
 
+  /** Most tests here are about rating mechanics, not the verified-use gate itself (that gets its
+   * own `describe` below) - this records the import rateListing now requires before delegating to
+   * it, so the rest of this file reads the same as it did before that gate existed. */
+  async function importAndRate(
+    listingId: string,
+    userId: string,
+    stars: number,
+    comment: string | undefined,
+  ) {
+    await recordListingImport(pool, listingId, userId);
+    return rateListing(pool, listingId, userId, stars, comment);
+  }
+
   it("records a rating and updates the listing's aggregate", async () => {
     const listing = await approvedListing();
 
-    const result = await rateListing(pool, listing.id, USER_2, 4, "Nice design");
+    const result = await importAndRate(listing.id, USER_2, 4, "Nice design");
     expect(result.rating.stars).toBe(4);
     expect(result.rating.comment).toBe("Nice design");
     expect(result.listing.ratingAvg).toBe(4);
@@ -59,8 +74,8 @@ describe("ratings", () => {
 
   it("upserts on a repeat rating from the same user instead of adding a second row", async () => {
     const listing = await approvedListing();
-    await rateListing(pool, listing.id, USER_2, 2, undefined);
-    const second = await rateListing(pool, listing.id, USER_2, 5, "changed my mind");
+    await importAndRate(listing.id, USER_2, 2, undefined);
+    const second = await importAndRate(listing.id, USER_2, 5, "changed my mind");
 
     expect(second.listing.ratingCount).toBe(1);
     expect(second.listing.ratingAvg).toBe(5);
@@ -69,8 +84,8 @@ describe("ratings", () => {
 
   it("averages across multiple distinct raters", async () => {
     const listing = await approvedListing();
-    await rateListing(pool, listing.id, USER_2, 2, undefined);
-    const result = await rateListing(pool, listing.id, USER_3, 4, undefined);
+    await importAndRate(listing.id, USER_2, 2, undefined);
+    const result = await importAndRate(listing.id, USER_3, 4, undefined);
 
     expect(result.listing.ratingCount).toBe(2);
     expect(result.listing.ratingAvg).toBe(3);
@@ -97,8 +112,8 @@ describe("ratings", () => {
 
   it("lists ratings newest first", async () => {
     const listing = await approvedListing();
-    await rateListing(pool, listing.id, USER_2, 3, "first");
-    await rateListing(pool, listing.id, USER_3, 5, "second");
+    await importAndRate(listing.id, USER_2, 3, "first");
+    await importAndRate(listing.id, USER_3, 5, "second");
 
     const ratings = await listRatings(pool, listing.id);
     expect(ratings.map((r) => r.comment)).toEqual(["second", "first"]);
@@ -112,14 +127,40 @@ describe("ratings", () => {
     expect(await listRatings(pool, listing.id)).toHaveLength(0);
   });
 
+  describe("verified-use gating", () => {
+    it("rejects rating a listing the user has never loaded", async () => {
+      const listing = await approvedListing();
+      await expect(rateListing(pool, listing.id, USER_2, 5, undefined)).rejects.toThrow(
+        ListingNotUsedError,
+      );
+      expect(await listRatings(pool, listing.id)).toHaveLength(0);
+    });
+
+    it("allows rating once the listing has been imported", async () => {
+      const listing = await approvedListing();
+      await recordListingImport(pool, listing.id, USER_2);
+      const result = await rateListing(pool, listing.id, USER_2, 5, undefined);
+      expect(result.rating.stars).toBe(5);
+    });
+
+    it("checks verified-use before self-rating never applies, and before the rate limit", async () => {
+      // Self-rating is still checked first - an owner gets that specific error, not "not used."
+      const listing = await approvedListing();
+      await expect(rateListing(pool, listing.id, USER_1, 5, undefined)).rejects.toThrow(
+        SelfRatingNotAllowedError,
+      );
+    });
+  });
+
   describe("rate limiting", () => {
     it("rejects a 21st distinct listing rated within the window", async () => {
       const listings = await Promise.all(Array.from({ length: 20 }, () => approvedListing()));
       for (const listing of listings) {
-        await rateListing(pool, listing.id, USER_2, 5, undefined);
+        await importAndRate(listing.id, USER_2, 5, undefined);
       }
 
       const oneMore = await approvedListing();
+      await recordListingImport(pool, oneMore.id, USER_2);
       await expect(rateListing(pool, oneMore.id, USER_2, 5, undefined)).rejects.toThrow(
         RatingRateLimitedError,
       );
@@ -128,7 +169,7 @@ describe("ratings", () => {
     it("doesn't count re-rating an already-touched listing against the limit", async () => {
       const listings = await Promise.all(Array.from({ length: 20 }, () => approvedListing()));
       for (const listing of listings) {
-        await rateListing(pool, listing.id, USER_2, 5, undefined);
+        await importAndRate(listing.id, USER_2, 5, undefined);
       }
 
       // Already at the 20-listing limit, but updating a rating for a listing
@@ -140,11 +181,11 @@ describe("ratings", () => {
     it("doesn't count another user's rating activity against this user's limit", async () => {
       const listings = await Promise.all(Array.from({ length: 20 }, () => approvedListing()));
       for (const listing of listings) {
-        await rateListing(pool, listing.id, USER_2, 5, undefined);
+        await importAndRate(listing.id, USER_2, 5, undefined);
       }
 
       const oneMore = await approvedListing();
-      const result = await rateListing(pool, oneMore.id, USER_3, 4, undefined);
+      const result = await importAndRate(oneMore.id, USER_3, 4, undefined);
       expect(result.rating.stars).toBe(4);
     });
   });

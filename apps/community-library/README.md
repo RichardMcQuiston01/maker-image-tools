@@ -82,6 +82,11 @@ same listing again updates your existing rating rather than adding a second one.
 recomputes and stores the listing's `ratingAvg`/`ratingCount` in the same transaction, so browsing/
 sorting by rating never needs a live aggregate join.
 
+**Listing imports** (`listing_imports`, one row per `(listing, user)` pair, migration
+`003_listing_imports.sql`) record that a user has loaded a listing's design into the editor -
+see "Rating abuse handling" below for why this exists. Recording an import is idempotent: loading
+a design you've already loaded again just leaves the existing row in place.
+
 ## Search
 
 `GET /listings`'s `q` param runs a real Postgres full-text search over `title`/`description`,
@@ -94,7 +99,7 @@ word order across the two fields.
 
 ## Rating abuse handling
 
-`POST /listings/:id/ratings` closes two concrete abuse vectors:
+`POST /listings/:id/ratings` closes three concrete abuse vectors:
 
 - **Self-rating** — a listing's own submitter can't rate it (`403`); rating your own listing to
   inflate its score was possible before this, with nothing stopping it.
@@ -104,36 +109,42 @@ word order across the two fields.
   never counts against the limit, so changing your mind about one rating repeatedly is never
   throttled - only how many _different_ listings a single identity can sway in a burst
   (brigading a set of listings up or down) is.
+- **Verified use** — `rateListing` requires a `listing_imports` row for `(listingId, userId)`
+  before accepting a rating (`403` otherwise), closing the gap neither of the above two touches:
+  someone who's never actually opened a design rating it anyway (to inflate or tank its score
+  without ever evaluating it). `apps/web`'s `CommunityLibraryPanel` records this itself, as a
+  best-effort `POST /listings/:id/imports` right after a successful Load - never blocking the load
+  on it, since a failure there should surface later (as a clear "load this first" error if the user
+  then tries to rate), not as a load failure.
+
+  This is tracked as `apps/web` loading the design into the editor, not as "this user saved/loaded
+  this listing" via `@maker/cloud-projects` - a listing has no reference to a cloud project to begin
+  with (see the top of this README), and this repo's services deliberately don't share foreign keys
+  across service boundaries. `listing_imports` is this service's own table, populated by its own new
+  endpoint, exactly like `ratings`/`listings` already are.
 
 `apps/web`'s `CommunityLibraryPanel` also hides the Rate control on the signed-in user's own
 listing - client-side convenience only, the same caveat as `ModerationPanel` hiding Approve/Reject
-from non-moderators; the `403` above is the actual enforcement.
+from non-moderators; the `403`s above are the actual enforcement.
 
 ## API
 
-| Route                        | Body / Query                                   | Response                                                                                                                                                    |
-| ---------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /listings`             | `{ userId, title, description?, tags?, data }` | `201 { listing }` (status `pending`) / `400` for invalid input                                                                                              |
-| `GET /listings`              | `?q=&tag=&sort=newest\|rating` (all optional)  | `200 { listings }` — approved only, summaries (no `data`)                                                                                                   |
-| `GET /listings/pending`      | —                                              | `200 { listings }` — awaiting moderation, oldest first                                                                                                      |
-| `GET /listings/:id`          | —                                              | `200 { listing }` (includes `data`, any status) / `404`                                                                                                     |
-| `DELETE /listings/:id`       | `?userId=`                                     | `204` / `404` if missing or not owned by `userId`                                                                                                           |
-| `POST /listings/:id/approve` | `{ reviewerId, notes? }`                       | `200 { listing }` (status `approved`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed                                         |
-| `POST /listings/:id/reject`  | `{ reviewerId, notes? }`                       | `200 { listing }` (status `rejected`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed                                         |
-| `POST /listings/:id/ratings` | `{ userId, stars, comment? }` (`stars` 1-5)    | `200 { rating, listing }` — `listing` carries the freshly recomputed aggregate / `400` / `403` if `userId` owns the listing / `404` / `429` if rate-limited |
-| `GET /listings/:id/ratings`  | —                                              | `200 { ratings }` — individual ratings, newest first                                                                                                        |
+| Route                        | Body / Query                                   | Response                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /listings`             | `{ userId, title, description?, tags?, data }` | `201 { listing }` (status `pending`) / `400` for invalid input                                                                                                                    |
+| `GET /listings`              | `?q=&tag=&sort=newest\|rating` (all optional)  | `200 { listings }` — approved only, summaries (no `data`)                                                                                                                         |
+| `GET /listings/pending`      | —                                              | `200 { listings }` — awaiting moderation, oldest first                                                                                                                            |
+| `GET /listings/:id`          | —                                              | `200 { listing }` (includes `data`, any status) / `404`                                                                                                                           |
+| `DELETE /listings/:id`       | `?userId=`                                     | `204` / `404` if missing or not owned by `userId`                                                                                                                                 |
+| `POST /listings/:id/approve` | `{ reviewerId, notes? }`                       | `200 { listing }` (status `approved`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed                                                               |
+| `POST /listings/:id/reject`  | `{ reviewerId, notes? }`                       | `200 { listing }` (status `rejected`) / `403` if `reviewerId` isn't a moderator / `404` / `409` if already reviewed                                                               |
+| `POST /listings/:id/ratings` | `{ userId, stars, comment? }` (`stars` 1-5)    | `200 { rating, listing }` — `listing` carries the freshly recomputed aggregate / `400` / `403` if `userId` owns the listing or hasn't imported it / `404` / `429` if rate-limited |
+| `GET /listings/:id/ratings`  | —                                              | `200 { ratings }` — individual ratings, newest first                                                                                                                              |
+| `POST /listings/:id/imports` | `{ userId }`                                   | `204` — idempotent / `404`                                                                                                                                                        |
 
 `listing` is `{ id, userId, title, description, tags, status, ratingAvg, ratingCount, reviewedBy, reviewedAt, reviewNotes, createdAt, updatedAt }`,
 plus `data` on the single-listing/publish/ratings responses. `rating` is
 `{ id, listingId, userId, stars, comment, createdAt, updatedAt }`.
-
-## What's not here yet
-
-- **Verified-purchase/verified-use gating for ratings** — see "Rating abuse handling" above for
-  what's already covered (self-rating, rate limiting). This service has no notion of whether a
-  rater actually used the design before rating it - it would need a signal from
-  `@maker/cloud-projects` (e.g. "this user saved/loaded this listing") that doesn't exist yet,
-  since the two services are deliberately decoupled with no cross-service foreign keys.
 
 ## Testing note
 
