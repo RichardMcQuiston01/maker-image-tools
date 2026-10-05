@@ -4,6 +4,16 @@ import {
   type ServerResponse,
 } from "node:http";
 import { join } from "node:path";
+import { AccountsConfigError, SessionVerificationError, verifySession } from "./accountsAuth.js";
+import {
+  AI_USAGE_METRIC,
+  BillingConfigError,
+  BillingVerificationError,
+  enforceFreeTierQuota,
+  getPlanTier,
+  recordUsage,
+  UsageQuotaExceededError,
+} from "./billingClient.js";
 import { classifyMaterial } from "./classify.js";
 import { loadDepthModel, type DepthModel } from "./depth.js";
 import {
@@ -24,6 +34,14 @@ import { decodeRgbaImage, encodeDepthMap } from "./wire-image.js";
 function geminiErrorStatus(err: unknown): number | undefined {
   if (err instanceof GeminiConfigError) return 500;
   if (err instanceof GeminiApiError) return 502;
+  if (
+    err instanceof AccountsConfigError ||
+    err instanceof SessionVerificationError ||
+    err instanceof BillingConfigError ||
+    err instanceof BillingVerificationError
+  )
+    return 500;
+  if (err instanceof UsageQuotaExceededError) return 402;
   return undefined;
 }
 
@@ -46,7 +64,40 @@ function setCorsHeaders(res: ServerResponse): void {
   // the app's own origin.
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+function bearerToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return undefined;
+  const token = header.slice("Bearer ".length).trim();
+  return token.length > 0 ? token : undefined;
+}
+
+/**
+ * Resolves the authenticated caller's user id via @maker/accounts, or
+ * writes the appropriate 401 response and returns `undefined`. Required by
+ * every Gemini-backed route (`/classify-material`, `/generate-image`,
+ * `/suggest-palette`) - each of those costs real money against a paid API,
+ * so, unlike `/depth-map` (a free, vendored local model), they need to know
+ * who's calling in order to check and record usage against a plan tier
+ * (see `billingClient.ts`).
+ */
+async function requireAuthenticatedUserId(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<string | undefined> {
+  const token = bearerToken(req);
+  if (!token) {
+    sendJson(res, 401, { error: "Missing bearer token" });
+    return undefined;
+  }
+  const userId = await verifySession(token);
+  if (!userId) {
+    sendJson(res, 401, { error: "Invalid or expired session" });
+    return undefined;
+  }
+  return userId;
 }
 
 async function readBody(req: IncomingMessage): Promise<Uint8Array> {
@@ -84,11 +135,16 @@ export function createServer() {
     if (req.method === "POST" && req.url === "/classify-material") {
       readBody(req)
         .then(async (image) => {
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
           if (image.length === 0) {
             sendJson(res, 400, { error: "Request body is empty" });
             return;
           }
+          const planTier = await getPlanTier(userId);
+          await enforceFreeTierQuota(userId, planTier);
           const result = await classifyMaterial(image);
+          await recordUsage(userId, AI_USAGE_METRIC);
           sendJson(res, 200, result);
         })
         .catch((err: unknown) => {
@@ -130,6 +186,8 @@ export function createServer() {
     if (req.method === "POST" && req.url === "/generate-image") {
       readBody(req)
         .then(async (body) => {
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
           if (body.length === 0) {
             sendJson(res, 400, { error: "Request body is empty" });
             return;
@@ -152,7 +210,10 @@ export function createServer() {
           if (typeof rawWidth === "number") options.width = rawWidth;
           if (typeof rawHeight === "number") options.height = rawHeight;
 
+          const planTier = await getPlanTier(userId);
+          await enforceFreeTierQuota(userId, planTier);
           const result = await generateImage(prompt, options);
+          await recordUsage(userId, AI_USAGE_METRIC);
           sendJson(res, 200, {
             width: result.width,
             height: result.height,
@@ -178,6 +239,8 @@ export function createServer() {
     if (req.method === "POST" && pathname === "/suggest-palette") {
       readBody(req)
         .then(async (image) => {
+          const userId = await requireAuthenticatedUserId(req, res);
+          if (!userId) return;
           if (image.length === 0) {
             sendJson(res, 400, { error: "Request body is empty" });
             return;
@@ -192,7 +255,10 @@ export function createServer() {
             }
             options.colorCount = colorCount;
           }
+          const planTier = await getPlanTier(userId);
+          await enforceFreeTierQuota(userId, planTier);
           const result = await suggestColorPalette(image, options);
+          await recordUsage(userId, AI_USAGE_METRIC);
           sendJson(res, 200, result);
         })
         .catch((err: unknown) => {

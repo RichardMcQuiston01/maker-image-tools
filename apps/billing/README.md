@@ -84,6 +84,12 @@ Every other event type is a no-op (Stripe sends many event types this service do
 
 ## Usage-based billing
 
+`@maker/ai-inference` is the first real consumer of `POST`/`GET /usage`: its three Gemini-backed
+routes (`/classify-material`, `/generate-image`, `/suggest-palette`) record one `ai_requests` event
+per successful call, use `GET /usage` to enforce a 20-request/month cap for free-tier callers, and
+leave paid tiers uncapped there since Stripe meters them instead — see that app's README for the
+full flow.
+
 `POST /usage/report`'s `usage.ts`:`reportUsageToStripe` reports a user's not-yet-reported
 `usage_events` rows to Stripe as [Billing Meter events](https://docs.stripe.com/billing/subscriptions/usage-based/recording-usage)
 (`stripe.billing.meterEvents.create`), one event per row, using the row's `metric` as the meter's
@@ -150,12 +156,6 @@ redelivery of the exact same attempt must not send a duplicate. Migration `003_d
 same transaction as the send and only kept if the send actually succeeds (rolled back on a send
 failure), so a failed send leaves that attempt eligible for a real retry instead of silently losing
 the notification, while a successful send is never repeated.
-
-## What's not here yet
-
-- **`apps/web` calling `POST /usage`** — usage is now reported to Stripe automatically once
-  recorded (see "Usage-based billing" above), but nothing in `apps/web` calls `POST /usage` itself
-  yet either — that's a follow-up once a feature actually needs a usage cap.
 
 ## Testing note
 

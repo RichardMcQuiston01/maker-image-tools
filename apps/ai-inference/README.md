@@ -20,13 +20,30 @@ Listens on `PORT` (default `8787`).
 | `GEMINI_CLASSIFY_MODEL` | no                                                                       | `gemini-2.5-flash`       | model used for material classification                                     |
 | `GEMINI_IMAGE_MODEL`    | no                                                                       | `gemini-2.5-flash-image` | model used for image generation                                            |
 | `GEMINI_PALETTE_MODEL`  | no                                                                       | `gemini-2.5-flash`       | model used for color-palette suggestion                                    |
+| `ACCOUNTS_URL`          | yes, for `/classify-material`, `/generate-image`, and `/suggest-palette` | —                        | `@maker/accounts` base URL, used to verify the caller's session            |
+| `BILLING_URL`           | yes, for `/classify-material`, `/generate-image`, and `/suggest-palette` | —                        | `@maker/billing` base URL, used for plan tier and usage-quota checks       |
 
-`/depth-map` (MiDaS, vendored ONNX model) works with no configuration and needs no API key.
+`/depth-map` (MiDaS, vendored ONNX model) works with no configuration and needs no API key, and
+is the only route with no auth or usage limit — it costs nothing to run, so there's nothing to
+ration.
 
 Without `GEMINI_API_KEY` set, `/classify-material`, `/generate-image`, and `/suggest-palette`
 respond with `500` and a message explaining the key is missing — there is no silent
 stub/placeholder fallback once real API wiring is in place, since a placeholder result could be
 mistaken for a real classification, generated image, or suggested palette.
+
+## Authentication and usage quota
+
+`/classify-material`, `/generate-image`, and `/suggest-palette` all call Gemini, so each one
+costs real money per request. All three require a `Authorization: Bearer <token>` header, verified
+against `@maker/accounts`'s `GET /me` — a missing or invalid/expired token gets `401`.
+
+Usage is tracked under a single `ai_requests` metric via `@maker/billing`'s usage-metering API
+(`GET /usage`, `POST /usage`), recorded only after a Gemini call actually succeeds — a failed
+call (e.g. a `500` from a missing `GEMINI_API_KEY`) never counts against a caller's usage. Free-tier
+callers are capped at 20 AI requests per month; going over returns `402` with a message explaining
+the limit. Paid tiers (`pro`/`studio`) have no cap here — usage is still recorded for them, and
+`@maker/billing` meters it to Stripe instead (see `apps/billing`'s "Usage-based billing").
 
 ## `POST /suggest-palette`
 

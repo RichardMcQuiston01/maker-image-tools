@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { AI_INFERENCE_URL } from "../lib/aiInferenceUrl";
+import { useAuth } from "../hooks/useAuth";
+import { AI_INFERENCE_URL, readAiInferenceErrorMessage } from "../lib/aiInferenceUrl";
 
 interface ImageGenerationPanelProps {
   onProcessed: (image: ImageData) => void;
@@ -22,6 +23,7 @@ function base64ToUint8ClampedArray(base64: string): Uint8ClampedArray {
 }
 
 export function ImageGenerationPanel({ onProcessed }: ImageGenerationPanelProps) {
+  const { token } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -29,17 +31,17 @@ export function ImageGenerationPanel({ onProcessed }: ImageGenerationPanelProps)
 
   const handleGenerate = useCallback(async () => {
     const trimmed = prompt.trim();
-    if (!trimmed) return;
+    if (!trimmed || !token) return;
     try {
       setStatus("generating");
       setError(null);
       const response = await fetch(`${AI_INFERENCE_URL}/generate-image`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ prompt: trimmed }),
       });
       if (!response.ok) {
-        throw new Error(`Image generation service responded with ${response.status}`);
+        throw new Error(await readAiInferenceErrorMessage(response, "Image generation failed"));
       }
       const result = (await response.json()) as GenerateImageResponse;
       const data = base64ToUint8ClampedArray(result.dataBase64).slice();
@@ -54,7 +56,7 @@ export function ImageGenerationPanel({ onProcessed }: ImageGenerationPanelProps)
           : "Failed to generate image",
       );
     }
-  }, [prompt, onProcessed]);
+  }, [prompt, onProcessed, token]);
 
   const busy = status === "generating";
 
@@ -78,7 +80,12 @@ export function ImageGenerationPanel({ onProcessed }: ImageGenerationPanelProps)
           {error}
         </p>
       )}
-      <button type="button" disabled={!prompt.trim() || busy} onClick={() => void handleGenerate()}>
+      {!token && <p className="ai-panel__hint">Sign in to use AI image generation.</p>}
+      <button
+        type="button"
+        disabled={!prompt.trim() || !token || busy}
+        onClick={() => void handleGenerate()}
+      >
         {busy ? "Generating…" : "Generate Image"}
       </button>
       {notes && (
