@@ -25,6 +25,11 @@ const ENV_KEYS = [
   "DISCORD_AUTHORIZE_URL",
   "DISCORD_TOKEN_URL",
   "DISCORD_API_BASE_URL",
+  "MICROSOFT_CLIENT_ID",
+  "MICROSOFT_CLIENT_SECRET",
+  "MICROSOFT_AUTHORIZE_URL",
+  "MICROSOFT_TOKEN_URL",
+  "MICROSOFT_API_BASE_URL",
 ] as const;
 
 describe("OAuth login", () => {
@@ -72,6 +77,11 @@ describe("OAuth login", () => {
     process.env.DISCORD_AUTHORIZE_URL = `${fakeProvider.baseUrl}/authorize`;
     process.env.DISCORD_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
     process.env.DISCORD_API_BASE_URL = fakeProvider.baseUrl;
+    process.env.MICROSOFT_CLIENT_ID = "microsoft-client-id";
+    process.env.MICROSOFT_CLIENT_SECRET = "microsoft-client-secret";
+    process.env.MICROSOFT_AUTHORIZE_URL = `${fakeProvider.baseUrl}/authorize`;
+    process.env.MICROSOFT_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+    process.env.MICROSOFT_API_BASE_URL = fakeProvider.baseUrl;
   });
 
   afterEach(async () => {
@@ -260,6 +270,50 @@ describe("OAuth login", () => {
 
     expect(status).toBe(302);
     expect(location).toContain("/#/oauth-callback?error=");
+  });
+
+  it("completes a full Microsoft login for a brand-new user", async () => {
+    await fakeProvider.close();
+    fakeProvider = await startFakeOAuthProvider({
+      microsoftUser: { id: "microsoft-id-1", mail: "ada@example.com" },
+    });
+    process.env.MICROSOFT_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+    process.env.MICROSOFT_API_BASE_URL = fakeProvider.baseUrl;
+
+    const { state } = await startFlow("microsoft");
+    const { status, location } = await runCallback("microsoft", { code: "fake-code", state });
+
+    expect(status).toBe(302);
+    const callbackUrl = new URL(location!.replace("#/", ""));
+    const token = callbackUrl.searchParams.get("token");
+    expect(token).toBeTruthy();
+
+    const me = await (
+      await fetch(`${baseUrl}/me`, { headers: { Authorization: `Bearer ${token}` } })
+    ).json();
+    expect(me.user.email).toBe("ada@example.com");
+  });
+
+  it("falls back to userPrincipalName when Microsoft Graph's mail field is null", async () => {
+    await fakeProvider.close();
+    fakeProvider = await startFakeOAuthProvider({
+      microsoftUser: {
+        id: "microsoft-id-2",
+        mail: null,
+        userPrincipalName: "grace@example.onmicrosoft.com",
+      },
+    });
+    process.env.MICROSOFT_TOKEN_URL = `${fakeProvider.baseUrl}/token`;
+    process.env.MICROSOFT_API_BASE_URL = fakeProvider.baseUrl;
+
+    const { state } = await startFlow("microsoft");
+    const { location } = await runCallback("microsoft", { code: "fake-code", state });
+    const token = new URL(location!.replace("#/", "")).searchParams.get("token");
+    const me = await (
+      await fetch(`${baseUrl}/me`, { headers: { Authorization: `Bearer ${token}` } })
+    ).json();
+
+    expect(me.user.email).toBe("grace@example.onmicrosoft.com");
   });
 
   it("redirects to the web app with an error when the provider reports one (user declined consent)", async () => {

@@ -175,10 +175,53 @@ function discordProvider(): OAuthProvider {
   };
 }
 
+/**
+ * Microsoft's (Azure AD / "Microsoft identity platform") OAuth endpoints.
+ * User info comes from Microsoft Graph's `GET /v1.0/me`, whose `mail` field
+ * is `null` for some accounts (e.g. a personal Microsoft account, or a
+ * work/school account with no mailbox) - this falls back to
+ * `userPrincipalName`, which is always present and is conventionally the
+ * user's sign-in email, the same email-fallback pattern GitHub's provider
+ * above uses. `MICROSOFT_AUTHORIZE_URL`/`MICROSOFT_TOKEN_URL`/
+ * `MICROSOFT_API_BASE_URL` override the defaults for the same reason as the
+ * other providers' above.
+ */
+function microsoftProvider(): OAuthProvider {
+  const apiBaseUrl = envOrDefault("MICROSOFT_API_BASE_URL", "https://graph.microsoft.com");
+  return {
+    name: "microsoft",
+    authorizeUrl: envOrDefault(
+      "MICROSOFT_AUTHORIZE_URL",
+      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    ),
+    tokenUrl: envOrDefault(
+      "MICROSOFT_TOKEN_URL",
+      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    ),
+    clientId: requireEnv("MICROSOFT_CLIENT_ID"),
+    clientSecret: requireEnv("MICROSOFT_CLIENT_SECRET"),
+    scope: "openid email User.Read",
+    async fetchUserInfo(accessToken) {
+      const body = await fetchJson(
+        `${apiBaseUrl}/v1.0/me`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+        "Microsoft user request",
+      );
+      const providerUserId = body.id;
+      const email = typeof body.mail === "string" ? body.mail : body.userPrincipalName;
+      if (typeof providerUserId !== "string" || typeof email !== "string") {
+        throw new Error("Microsoft user response is missing id/mail/userPrincipalName");
+      }
+      return { providerUserId, email };
+    },
+  };
+}
+
 const PROVIDER_FACTORIES: Record<string, () => OAuthProvider> = {
   google: googleProvider,
   github: githubProvider,
   discord: discordProvider,
+  microsoft: microsoftProvider,
 };
 
 export function getOAuthProvider(name: string): OAuthProvider | undefined {
