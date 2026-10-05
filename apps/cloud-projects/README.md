@@ -197,11 +197,15 @@ This broadcasts each save as-is; it's "Collaborative merging" below (`PUT /proje
 `baseData`) that keeps two concurrent saves from overwriting each other's changes in the first
 place, not this stream. `EventSource` can't set custom headers, so auth here is a `?token=` query
 parameter (validated with the same `verifySession` as everywhere else) rather than an
-`Authorization` header. `liveUpdates.ts`'s
-subscriber registry is in-memory and per-process (`Map<projectId, Set<ServerResponse>>`) - fine
-for this service's single-dev-server-instance scope like every other `apps/*` service in this
-repo, but a multi-replica production deployment would need a real pub/sub backend (e.g. Redis) to
-fan a write on one instance out to viewers connected to another.
+`Authorization` header. `liveUpdates.ts`'s subscriber registry (`Map<projectId, Map<ServerResponse,
+userId>>`) is itself still in-memory and per-process, but `startCrossInstanceRelay` fans every
+`publish()` out over Postgres LISTEN/NOTIFY to every other `apps/cloud-projects` instance sharing
+the same database, so a deployment with more than one instance behind a load balancer still
+delivers a save on one instance to a viewer connected to another. `project` events are relayed as a
+lightweight "refresh" signal rather than carrying the (potentially large) project data itself -
+NOTIFY payloads are capped at 8000 bytes by Postgres - so a receiving instance re-fetches the
+project from the database instead; `deleted` and `collaborators` events are small enough to embed
+directly.
 
 ## Presence
 
@@ -216,9 +220,16 @@ before rendering an "also viewing: ..." line, the same raw-userId display conven
 above already uses (no email is resolved). Two connections for the same user (e.g. two browser tabs)
 only ever count once - the viewer list is deduplicated by userId, not by connection.
 
-This shares the same in-memory, per-process limitation "Live updates" describes: a multi-replica
-deployment would need viewer state kept in a shared store (e.g. Redis) rather than a plain in-process
-`Map`, so that a viewer connected to one instance is visible to a viewer connected to another.
+Presence shares "Live updates"' cross-instance relay: each instance also relays its own local
+viewers for a project (never an aggregate, to avoid one instance misattributing another's count) on
+every presence change and on a periodic heartbeat (every 10s by default), and `currentViewers`
+returns the union of this instance's local viewers and every other instance's last-known snapshot.
+The heartbeat exists so a newly-connected or newly-restarted instance learns about viewers already
+connected elsewhere even if nothing else changes in the meantime - at the cost of a bounded
+propagation delay (up to one heartbeat interval) rather than instant cross-instance consistency.
+Snapshots older than 3.5 heartbeats are swept from the cache, so an instance that disappears without
+a graceful shutdown (crash, kill -9) doesn't leave its last-seen viewers stuck in every other
+instance's presence list forever.
 
 ## Storage quotas
 
@@ -254,14 +265,6 @@ the design's visible vector paths onto a small canvas) - anything else is reject
 orphaned in the bucket. `GET /shared/:token/thumbnail` mirrors `GET /shared/:token`: no auth
 required, since a share link's whole point is letting anyone with it view the project - preview
 included.
-
-## What's not here yet
-
-- **Multi-instance live updates** — see "Live updates"/"Presence" above; `liveUpdates.ts`'s
-  subscriber registry (and the presence it now also tracks) is per-process, so a deployment with
-  more than one `apps/cloud-projects` instance behind a load balancer would need a shared pub/sub
-  backend for a save (or a viewer connecting/disconnecting) on one instance to reach a viewer
-  connected to another.
 
 ## Testing note
 
