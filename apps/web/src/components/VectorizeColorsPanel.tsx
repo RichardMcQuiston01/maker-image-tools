@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { exportImageData } from "@maker/core-image";
 import { traceImageColors, type ColorLayer } from "@maker/core-vector";
-import { AI_INFERENCE_URL } from "../lib/aiInferenceUrl";
+import { useAuth } from "../hooks/useAuth";
+import { AI_INFERENCE_URL, readAiInferenceErrorMessage } from "../lib/aiInferenceUrl";
 
 interface VectorizeColorsPanelProps {
   image: ImageData | null;
@@ -19,6 +20,7 @@ function rgbToHex([r, g, b]: ColorLayer["color"]): string {
 }
 
 export function VectorizeColorsPanel({ image, onAddColorLayers }: VectorizeColorsPanelProps) {
+  const { token } = useAuth();
   const [colorCount, setColorCount] = useState(6);
   const [error, setError] = useState<string | null>(null);
   const [lastLayerCount, setLastLayerCount] = useState<number | null>(null);
@@ -28,18 +30,18 @@ export function VectorizeColorsPanel({ image, onAddColorLayers }: VectorizeColor
   const [aiNotes, setAiNotes] = useState<string | null>(null);
 
   const handleSuggestPalette = useCallback(async () => {
-    if (!image) return;
+    if (!image || !token) return;
     try {
       setAiStatus("suggesting");
       setError(null);
       const blob = await exportImageData(image, { mimeType: "image/png" });
       const response = await fetch(`${AI_INFERENCE_URL}/suggest-palette?colorCount=${colorCount}`, {
         method: "POST",
-        headers: { "Content-Type": blob.type },
+        headers: { "Content-Type": blob.type, Authorization: `Bearer ${token}` },
         body: blob,
       });
       if (!response.ok) {
-        throw new Error(`Palette suggestion service responded with ${response.status}`);
+        throw new Error(await readAiInferenceErrorMessage(response, "Palette suggestion failed"));
       }
       const result = (await response.json()) as SuggestPaletteResponse;
       setAiPalette(result.palette);
@@ -53,7 +55,7 @@ export function VectorizeColorsPanel({ image, onAddColorLayers }: VectorizeColor
           : "Failed to suggest a color palette",
       );
     }
-  }, [image, colorCount]);
+  }, [image, colorCount, token]);
 
   const handleClearAiPalette = useCallback(() => {
     setAiPalette(null);
@@ -103,10 +105,11 @@ export function VectorizeColorsPanel({ image, onAddColorLayers }: VectorizeColor
           {error}
         </p>
       )}
+      {!token && <p className="ai-panel__hint">Sign in to use AI palette suggestions.</p>}
       <div className="ai-panel__actions">
         <button
           type="button"
-          disabled={!image || suggesting}
+          disabled={!image || !token || suggesting}
           onClick={() => void handleSuggestPalette()}
         >
           {suggesting ? "Suggesting palette…" : "Suggest Palette with AI"}
