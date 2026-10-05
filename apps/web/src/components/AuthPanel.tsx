@@ -153,6 +153,9 @@ function ConnectProviderLinks({ token }: { token: string }) {
       <a href={`${ACCOUNTS_URL}/oauth/discord/start?linkToken=${encodeURIComponent(token)}`}>
         Connect Discord
       </a>
+      <a href={`${ACCOUNTS_URL}/oauth/microsoft/start?linkToken=${encodeURIComponent(token)}`}>
+        Connect Microsoft
+      </a>
     </div>
   );
 }
@@ -317,6 +320,7 @@ export function AuthPanel() {
         <a href={`${ACCOUNTS_URL}/oauth/google/start`}>Continue with Google</a>
         <a href={`${ACCOUNTS_URL}/oauth/github/start`}>Continue with GitHub</a>
         <a href={`${ACCOUNTS_URL}/oauth/discord/start`}>Continue with Discord</a>
+        <a href={`${ACCOUNTS_URL}/oauth/microsoft/start`}>Continue with Microsoft</a>
       </div>
     </div>
   );
