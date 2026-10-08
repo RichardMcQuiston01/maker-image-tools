@@ -28,9 +28,17 @@ import type { ObjectStore } from "../src/objectStorage.js";
  * blind to the other's project data.
  */
 function createPostgresBackedObjectStore(pool: Pool): ObjectStore {
-  const ready = pool.query(
-    "CREATE TABLE IF NOT EXISTS smoke_object_store (key text PRIMARY KEY, body bytea NOT NULL, content_type text)",
-  );
+  // Both smoke instances boot at the same moment, and two concurrent
+  // `CREATE TABLE IF NOT EXISTS` statements can race inside Postgres: the loser fails with
+  // unique_violation (23505, on pg_type) or duplicate_table (42P07) even though the table now
+  // exists. Either code means the other instance won, which is all this needs.
+  const ready = pool
+    .query(
+      "CREATE TABLE IF NOT EXISTS smoke_object_store (key text PRIMARY KEY, body bytea NOT NULL, content_type text)",
+    )
+    .catch((err: { code?: string }) => {
+      if (err.code !== "23505" && err.code !== "42P07") throw err;
+    });
 
   const client = {
     send: async (command: unknown) => {

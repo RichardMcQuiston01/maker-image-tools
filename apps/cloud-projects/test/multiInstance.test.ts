@@ -94,10 +94,7 @@ async function spawnInstance(env: Record<string, string>): Promise<Instance> {
   // it real traffic.
   for (let attempt = 0; ; attempt++) {
     try {
-      // `Connection: close` keeps the probe from leaving a pooled keep-alive
-      // socket behind that the first real request could then reuse after the
-      // server has already torn it down ("other side closed").
-      await fetch(baseUrl, { method: "OPTIONS", headers: { Connection: "close" } });
+      await fetch(baseUrl, { method: "OPTIONS" });
       break;
     } catch (err) {
       if (attempt >= 20) throw err;
