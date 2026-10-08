@@ -50,7 +50,7 @@ function hexToRgb(hex: string): RgbColor | undefined {
 
 /**
  * Calls Gemini's multimodal API to propose a small palette of "meaningful"
- * colors for `@maker/core-vector`'s `traceImageColors({ palette })` — a
+ * colors for `@richardmcquiston01/core-vector`'s `traceImageColors({ palette })` — a
  * semantic stand-in for the median-cut color quantization that function
  * otherwise falls back to, so multi-color vectorization (ROADMAP.md 5B-4)
  * can separate an image by subject/region rather than pure color statistics.

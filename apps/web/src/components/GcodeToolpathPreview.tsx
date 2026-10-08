@@ -1,4 +1,4 @@
-import { computeGcodeBounds, parseGcode, type GcodeMove } from "@maker/gcode";
+import { computeGcodeBounds, parseGcode, type GcodeMove } from "@richardmcquiston01/gcode";
 
 interface GcodeToolpathPreviewProps {
   gcode: string;

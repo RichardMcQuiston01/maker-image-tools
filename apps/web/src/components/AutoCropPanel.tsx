@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { crop } from "@maker/core-image";
+import { crop } from "@richardmcquiston01/core-image";
 import type { BackgroundRemovalModel } from "@maker/ai-tools";
 
 interface AutoCropPanelProps {

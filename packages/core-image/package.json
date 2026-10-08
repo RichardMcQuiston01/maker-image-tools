@@ -1,5 +1,5 @@
 {
-  "name": "@maker/core-image",
+  "name": "@richardmcquiston01/core-image",
   "version": "0.1.0",
   "description": "Image processing core (filters, heightmaps, pixel I/O) for laser/CNC/maker workflows",
   "license": "MIT",

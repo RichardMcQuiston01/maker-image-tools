@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDocument, type VectorDocument } from "@maker/core-vector";
+import { createDocument, type VectorDocument } from "@richardmcquiston01/core-vector";
 import { renderThumbnail } from "../lib/renderThumbnail";
 
 describe("renderThumbnail", () => {

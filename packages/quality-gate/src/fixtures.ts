@@ -1,4 +1,4 @@
-import { createImageData } from "@maker/core-image";
+import { createImageData } from "@richardmcquiston01/core-image";
 import type { BBox } from "./metrics.js";
 
 export interface ShapeFixture {

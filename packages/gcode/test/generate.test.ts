@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { VectorPath } from "@maker/core-vector";
+import type { VectorPath } from "@richardmcquiston01/core-vector";
 import { pathsToGcode, rasterToGcode } from "../src/generate.js";
 
 function solidImage(

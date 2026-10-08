@@ -1,4 +1,4 @@
-import { createImageData, resize } from "@maker/core-image";
+import { createImageData, resize } from "@richardmcquiston01/core-image";
 import * as tf from "@tensorflow/tfjs";
 import x2 from "@upscalerjs/esrgan-slim/2x";
 import x3 from "@upscalerjs/esrgan-slim/3x";

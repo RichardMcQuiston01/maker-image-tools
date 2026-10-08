@@ -226,7 +226,7 @@ Earlier drafts of this roadmap planned them as separate, reusable
 repositories so they could be shared by future maker-tool apps. In
 practice, every workstream that's reached this point stayed inside this
 monorepo instead: `@maker/machine-control` (Stage 3D) and nesting (folded
-into `@maker/core-vector`, Stage 3C) are workspace packages, and
+into `@richardmcquiston01/core-vector`, Stage 3C) are workspace packages, and
 `@maker/ai-inference` (Stage 5b) is a workspace app — none of them became
 a separate repo, because there's been no second consuming app yet to
 justify the cross-repo publish/version/consume overhead. Stage 6 follows
@@ -255,7 +255,7 @@ then, not before.
 | `apps/ai-inference`      | Hosted AI model serving for Stage 5b features                              | Model serving endpoints (material classification, depth-map, image generation, color-palette suggestion), request queueing, rate limiting | Node/TS + ONNX Runtime + Gemini API | Stage 5b — **already built**                                                                |
 
 **Integration pattern:** `apps/web` depends on `@maker/machine-control` and
-`@maker/core-vector` (which now includes nesting) directly as workspace
+`@richardmcquiston01/core-vector` (which now includes nesting) directly as workspace
 packages, and talks to the service workspaces above
 (`apps/accounts`/`apps/billing`/`apps/cloud-projects`/
 `apps/community-library`/`apps/material-db`/`apps/ai-inference`) purely

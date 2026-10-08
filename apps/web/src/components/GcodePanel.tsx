@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
-import { kerfCompensate, type VectorPath } from "@maker/core-vector";
-import { pathsToGcode } from "@maker/gcode";
+import { kerfCompensate, type VectorPath } from "@richardmcquiston01/core-vector";
+import { pathsToGcode } from "@richardmcquiston01/gcode";
 import { getAllPresets } from "@maker/material-library";
 
 interface GcodePanelProps {

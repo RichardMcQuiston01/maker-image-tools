@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { svgToPaths, type VectorPath } from "@maker/core-vector";
+import { svgToPaths, type VectorPath } from "@richardmcquiston01/core-vector";
 import {
   generateEarringPair,
   generateFingerJointBox,

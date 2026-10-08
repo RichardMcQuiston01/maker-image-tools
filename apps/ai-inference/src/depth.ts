@@ -1,5 +1,5 @@
 import "./image-data-polyfill.js";
-import { createImageData, resize } from "@maker/core-image";
+import { createImageData, resize } from "@richardmcquiston01/core-image";
 import * as ort from "onnxruntime-node";
 import type { RgbaImage, DepthMap } from "./wire-image.js";
 

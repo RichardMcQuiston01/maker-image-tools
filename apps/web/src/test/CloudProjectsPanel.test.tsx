@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDocument, type VectorDocument } from "@maker/core-vector";
+import { createDocument, type VectorDocument } from "@richardmcquiston01/core-vector";
 import { CloudProjectsPanel } from "../components/CloudProjectsPanel";
 import { AuthProvider } from "../hooks/AuthContext";
 import { renderThumbnail } from "../lib/renderThumbnail";

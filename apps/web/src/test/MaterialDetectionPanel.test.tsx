@@ -3,11 +3,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MaterialDetectionPanel } from "../components/MaterialDetectionPanel";
 import { AuthProvider } from "../hooks/AuthContext";
 
-// @maker/core-image's exportImageData needs a real browser Canvas 2D
+// @richardmcquiston01/core-image's exportImageData needs a real browser Canvas 2D
 // context, which jsdom doesn't provide (see that package's own io.ts) - so
 // it's mocked here the same way every other test in this repo that touches
 // it would have to be, to exercise the rest of the panel's fetch/auth flow.
-vi.mock("@maker/core-image", () => ({
+vi.mock("@richardmcquiston01/core-image", () => ({
   exportImageData: vi.fn().mockResolvedValue(new Blob(["fake-png"], { type: "image/png" })),
 }));
 

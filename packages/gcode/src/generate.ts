@@ -1,5 +1,5 @@
-import type { VectorPath } from "@maker/core-vector";
-import { flattenPath } from "@maker/core-vector";
+import type { VectorPath } from "@richardmcquiston01/core-vector";
+import { flattenPath } from "@richardmcquiston01/core-vector";
 
 export interface GcodeGenerationOptions {
   /** mm/min feed rate for cutting/engraving moves. Default 1000. */

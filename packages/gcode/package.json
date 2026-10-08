@@ -1,5 +1,5 @@
 {
-  "name": "@maker/gcode",
+  "name": "@richardmcquiston01/gcode",
   "version": "0.1.0",
   "description": "G-code generation and parsing for laser/CNC/maker machines",
   "license": "MIT",
@@ -28,7 +28,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@maker/core-vector": "workspace:*"
+    "@richardmcquiston01/core-vector": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { VectorDocument } from "@maker/core-vector";
+import type { VectorDocument } from "@richardmcquiston01/core-vector";
 import { useAuth } from "../hooks/useAuth";
 import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
 

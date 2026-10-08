@@ -51,7 +51,7 @@ Body: raw image bytes (PNG). Optional `?colorCount=N` query parameter (default 6
 `[1, 32]`). Returns `{ palette: [number, number, number][], notes: string }` — an RGB triple per
 suggested color, ordered as Gemini returned them.
 
-This is a semantic stand-in for `@maker/core-vector`'s default median-cut color quantization: it
+This is a semantic stand-in for `@richardmcquiston01/core-vector`'s default median-cut color quantization: it
 asks Gemini to pick colors that separate the image by subject/region rather than pure color
 statistics. The palette is the _only_ thing this endpoint produces — assigning pixels to it and
 tracing the result into vector layers (`traceImageColors({ palette })`) stays entirely

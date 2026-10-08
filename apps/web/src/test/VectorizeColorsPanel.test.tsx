@@ -5,7 +5,7 @@ import { AuthProvider } from "../hooks/AuthContext";
 
 // Same reasoning as MaterialDetectionPanel.test.tsx: exportImageData needs a
 // real browser Canvas 2D context jsdom doesn't provide.
-vi.mock("@maker/core-image", () => ({
+vi.mock("@richardmcquiston01/core-image", () => ({
   exportImageData: vi.fn().mockResolvedValue(new Blob(["fake-png"], { type: "image/png" })),
 }));
 

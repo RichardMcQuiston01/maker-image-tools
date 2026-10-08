@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { exportImageData } from "@maker/core-image";
+import { exportImageData } from "@richardmcquiston01/core-image";
 import type { MaterialClassification } from "@maker/ai-inference";
 import { useAuth } from "../hooks/useAuth";
 import { AI_INFERENCE_URL, readAiInferenceErrorMessage } from "../lib/aiInferenceUrl";

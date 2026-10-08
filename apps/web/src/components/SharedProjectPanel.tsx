@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { VectorDocument } from "@maker/core-vector";
+import type { VectorDocument } from "@richardmcquiston01/core-vector";
 import { CLOUD_PROJECTS_URL } from "../lib/cloudProjectsUrl";
 
 interface SharedProjectPanelProps {

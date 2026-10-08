@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@maker/ai-tools": "workspace:*",
-    "@maker/core-image": "workspace:*"
+    "@richardmcquiston01/core-image": "workspace:*"
   },
   "devDependencies": {
     "@upscalerjs/esrgan-slim": "1.0.0",

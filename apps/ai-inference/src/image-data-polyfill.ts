@@ -1,4 +1,4 @@
-// @maker/core-image's resize/createImageData call the real `ImageData`
+// @richardmcquiston01/core-image's resize/createImageData call the real `ImageData`
 // constructor. That's a browser API with no Node equivalent, so this backend
 // (which reuses core-image's resize for depth-map preprocessing/upsampling)
 // needs a minimal polyfill installed before core-image is imported. Only

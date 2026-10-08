@@ -1,5 +1,5 @@
-import type { BBox, Point } from "@maker/core-vector";
-import { boundingBoxOfPoints } from "@maker/core-vector";
+import type { BBox, Point } from "@richardmcquiston01/core-vector";
+import { boundingBoxOfPoints } from "@richardmcquiston01/core-vector";
 
 export interface GcodeMove {
   type: "rapid" | "cut";

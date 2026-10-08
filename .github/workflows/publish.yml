@@ -23,7 +23,7 @@ jobs:
           for pkg in core-image core-vector gcode; do
             version=$(node -p "require('./packages/$pkg/package.json').version")
             if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-              echo "Tag $GITHUB_REF_NAME does not match @maker/$pkg version $version" >&2
+              echo "Tag $GITHUB_REF_NAME does not match @richardmcquiston01/$pkg version $version" >&2
               exit 1
             fi
           done

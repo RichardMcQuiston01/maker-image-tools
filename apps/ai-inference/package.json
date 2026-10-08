@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@maker/core-image": "workspace:*",
+    "@richardmcquiston01/core-image": "workspace:*",
     "@maker/material-library": "workspace:*",
     "onnxruntime-node": "^1.20.1",
     "pngjs": "^7.0.0"

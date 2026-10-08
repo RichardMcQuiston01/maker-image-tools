@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
-import { exportImageData } from "@maker/core-image";
-import { traceImageColors, type ColorLayer } from "@maker/core-vector";
+import { exportImageData } from "@richardmcquiston01/core-image";
+import { traceImageColors, type ColorLayer } from "@richardmcquiston01/core-vector";
 import { useAuth } from "../hooks/useAuth";
 import { AI_INFERENCE_URL, readAiInferenceErrorMessage } from "../lib/aiInferenceUrl";
 

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { resize } from "@maker/core-image";
+import { resize } from "@richardmcquiston01/core-image";
 import { loadUpscaleModel } from "@maker/ai-tools";
 import { createDetailFixture, sharpness } from "../src/index.js";
 

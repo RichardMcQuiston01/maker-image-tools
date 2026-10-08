@@ -1,4 +1,4 @@
-import { BUILT_IN_FILTERS, type BuiltInFilterEntry } from "@maker/core-image";
+import { BUILT_IN_FILTERS, type BuiltInFilterEntry } from "@richardmcquiston01/core-image";
 
 interface FilterPanelProps {
   onApply: (name: string) => void;
