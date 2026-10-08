@@ -152,7 +152,7 @@
     },
     "packages/core-image": {
       "name": "@richardmcquiston01/core-image",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "jsdom": "^25.0.1",
         "typescript": "^5.7.3",
@@ -161,7 +161,7 @@
     },
     "packages/core-vector": {
       "name": "@richardmcquiston01/core-vector",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "clipper-lib": "^6.4.2",
         "opentype.js": "^1.3.4",
@@ -175,7 +175,7 @@
     },
     "packages/gcode": {
       "name": "@richardmcquiston01/gcode",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@richardmcquiston01/core-vector": "workspace:*",
       },

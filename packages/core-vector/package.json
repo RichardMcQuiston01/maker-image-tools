@@ -1,8 +1,24 @@
 {
   "name": "@richardmcquiston01/core-vector",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vector geometry core (paths, boolean ops, nesting, DXF, tracing) for laser/CNC/maker workflows",
+  "keywords": [
+    "vector",
+    "svg",
+    "dxf",
+    "image-trace",
+    "nesting",
+    "boolean-ops",
+    "laser",
+    "cnc",
+    "maker",
+    "typescript"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/RichardMcQuiston01/maker-image-tools#readme",
+  "bugs": {
+    "url": "https://github.com/RichardMcQuiston01/maker-image-tools/issues"
+  },
   "type": "module",
   "repository": {
     "type": "git",
