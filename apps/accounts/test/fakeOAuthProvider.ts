@@ -2,9 +2,9 @@ import { createServer, type Server } from "node:http";
 
 /**
  * A tiny local HTTP server standing in for a real OAuth provider (Google,
- * GitHub, or Discord) - there's no way to register a real OAuth app or reach
- * a real provider's servers from this sandbox, so this is what
- * `GOOGLE_TOKEN_URL`/`GOOGLE_USERINFO_URL` (or their GitHub/Discord
+ * GitHub, Discord, or Microsoft) - there's no way to register a real OAuth
+ * app or reach a real provider's servers from this sandbox, so this is what
+ * `GOOGLE_TOKEN_URL`/`GOOGLE_USERINFO_URL` (or their GitHub/Discord/Microsoft
  * equivalents) get pointed at in tests instead. Unlike the SDK-level fakes
  * elsewhere in this repo (`fakeStripe.ts`, `fakeS3.ts`), these providers are
  * plain REST over HTTP with no SDK to intercept, so a real (if tiny) HTTP
@@ -22,6 +22,8 @@ export interface FakeOAuthProviderOptions {
   githubEmails?: Array<{ email: string; primary: boolean; verified: boolean }>;
   /** Discord-shaped `GET /users/@me` response. */
   discordUser?: { id: string; email: string; verified: boolean };
+  /** Microsoft Graph-shaped `GET /v1.0/me` response. */
+  microsoftUser?: { id: string; mail: string | null; userPrincipalName?: string };
 }
 
 export interface FakeOAuthProvider {
@@ -81,6 +83,20 @@ export async function startFakeOAuthProvider(
             id: "fake-discord-id",
             email: "fake@example.com",
             verified: true,
+          },
+        ),
+      );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/v1.0/me") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify(
+          options.microsoftUser ?? {
+            id: "fake-microsoft-id",
+            mail: "fake@example.com",
+            userPrincipalName: "fake@example.com",
           },
         ),
       );

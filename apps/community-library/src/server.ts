@@ -17,10 +17,12 @@ import {
   publishListing,
   rejectListing,
 } from "./listings.js";
+import { recordListingImport } from "./imports.js";
 import { AccountsConfigError, isModerator, ModeratorVerificationError } from "./moderatorAuth.js";
 import { getObjectStore, ObjectStorageConfigError, type ObjectStore } from "./objectStorage.js";
 import {
   InvalidRatingInputError,
+  ListingNotUsedError,
   listRatings,
   RatingRateLimitedError,
   rateListing,
@@ -125,7 +127,12 @@ function errorStatus(err: unknown): number {
   )
     return 500;
   if (err instanceof InvalidListingInputError || err instanceof InvalidRatingInputError) return 400;
-  if (err instanceof NotAModeratorError || err instanceof SelfRatingNotAllowedError) return 403;
+  if (
+    err instanceof NotAModeratorError ||
+    err instanceof SelfRatingNotAllowedError ||
+    err instanceof ListingNotUsedError
+  )
+    return 403;
   if (err instanceof ListingNotFoundError) return 404;
   if (err instanceof ListingNotPendingError) return 409;
   if (err instanceof RatingRateLimitedError) return 429;
@@ -146,6 +153,7 @@ const LISTING_ID_RE = /^\/listings\/([^/]+)$/;
 const APPROVE_RE = /^\/listings\/([^/]+)\/approve$/;
 const REJECT_RE = /^\/listings\/([^/]+)\/reject$/;
 const RATINGS_RE = /^\/listings\/([^/]+)\/ratings$/;
+const IMPORTS_RE = /^\/listings\/([^/]+)\/imports$/;
 
 export function createServer(pool: Pool = createPool(), store: ObjectStore = getObjectStore()) {
   const migrationsReady = runMigrations(pool);
@@ -228,6 +236,15 @@ export function createServer(pool: Pool = createPool(), store: ObjectStore = get
             optionalString(body, "notes"),
           );
           sendJson(res, 200, { listing });
+          return;
+        }
+
+        const importsMatch = pathname.match(IMPORTS_RE);
+        if (importsMatch && req.method === "POST") {
+          const body = await parseJsonBody(req);
+          await recordListingImport(pool, importsMatch[1]!, requireString(body, "userId"));
+          res.writeHead(204);
+          res.end();
           return;
         }
 

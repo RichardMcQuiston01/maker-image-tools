@@ -147,6 +147,45 @@ describe("billing server", () => {
     expect(response.status).toBe(400);
   });
 
+  it("reports a user's usage to Stripe as Billing Meter events", async () => {
+    await fetch(`${baseUrl}/checkout-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: USER_1,
+        email: "ada@example.com",
+        planTier: "pro",
+        successUrl: "https://app.example.com/success",
+        cancelUrl: "https://app.example.com/cancel",
+      }),
+    });
+    await fetch(`${baseUrl}/usage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: USER_1, metric: "ai-inference-calls", quantity: 4 }),
+    });
+
+    const response = await fetch(`${baseUrl}/usage/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: USER_1 }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ reported: 1 });
+    expect(fakeStripe.billing.meterEvents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ event_name: "ai-inference-calls" }),
+    );
+  });
+
+  it("rejects reporting usage for a user with no Stripe customer with 404", async () => {
+    const response = await fetch(`${baseUrl}/usage/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: NOBODY }),
+    });
+    expect(response.status).toBe(404);
+  });
+
   it("rejects a webhook request missing the Stripe-Signature header", async () => {
     const response = await fetch(`${baseUrl}/webhook`, {
       method: "POST",

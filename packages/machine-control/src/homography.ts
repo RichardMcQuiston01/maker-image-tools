@@ -1,4 +1,4 @@
-import type { Point } from "@maker/core-vector";
+import type { Point } from "@richardmcquiston01/core-vector";
 
 export interface PointCorrespondence {
   source: Point;

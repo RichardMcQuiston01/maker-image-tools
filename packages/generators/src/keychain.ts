@@ -1,4 +1,4 @@
-import type { PathCommand, Point, VectorPath } from "@maker/core-vector";
+import type { PathCommand, Point, VectorPath } from "@richardmcquiston01/core-vector";
 
 export interface KeychainOptions {
   /** Shape of the blank. Default "rounded-rect". */

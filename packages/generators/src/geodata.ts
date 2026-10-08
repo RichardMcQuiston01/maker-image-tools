@@ -1,4 +1,4 @@
-import type { PathCommand, Point, VectorPath } from "@maker/core-vector";
+import type { PathCommand, Point, VectorPath } from "@richardmcquiston01/core-vector";
 
 /**
  * Minimal GeoJSON subset this function understands — a FeatureCollection of LineString /

@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
-import { createFilterRegistry, exportImageData, registerBuiltInFilters } from "@maker/core-image";
+import {
+  createFilterRegistry,
+  exportImageData,
+  registerBuiltInFilters,
+} from "@richardmcquiston01/core-image";
 import {
   addLayer,
   addObject,
@@ -13,7 +17,7 @@ import {
   type LayerSettings,
   type NestResult,
   type VectorDocument,
-} from "@maker/core-vector";
+} from "@richardmcquiston01/core-vector";
 import type * as opentype from "opentype.js";
 import { DropZone } from "./components/DropZone";
 import { CanvasPreview } from "./components/CanvasPreview";

@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@maker/core-vector": "workspace:*"
+    "@richardmcquiston01/core-vector": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

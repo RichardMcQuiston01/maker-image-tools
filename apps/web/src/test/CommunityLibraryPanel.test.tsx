@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDocument, type VectorDocument } from "@maker/core-vector";
+import { createDocument, type VectorDocument } from "@richardmcquiston01/core-vector";
 import { CommunityLibraryPanel } from "../components/CommunityLibraryPanel";
 import { AuthProvider } from "../hooks/AuthContext";
 
@@ -94,6 +94,39 @@ describe("CommunityLibraryPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Load" }));
 
     await waitFor(() => expect(onLoadDocument).toHaveBeenCalledWith(listingData));
+  });
+
+  it("records an import when a signed-in user loads a listing", async () => {
+    window.localStorage.setItem("maker.accounts.token", "test-token");
+    const fetchMock = vi.mocked(fetch);
+    const listingData: VectorDocument = { layers: [], objects: [] };
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: SIGNED_IN_USER }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        listings: [
+          {
+            id: "l1",
+            userId: OTHER_USER_ID,
+            title: "Fox Keychain",
+            description: null,
+            tags: [],
+            ratingAvg: null,
+            ratingCount: 0,
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { listing: { data: listingData } }));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Load" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const [url, init] = fetchMock.mock.calls[3]!;
+    expect(String(url)).toContain("/listings/l1/imports");
+    expect(JSON.parse(String(init?.body))).toEqual({ userId: SIGNED_IN_USER.id });
   });
 
   it("does not show rating or delete controls when signed out", async () => {

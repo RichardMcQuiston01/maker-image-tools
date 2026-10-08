@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { nestParts, type NestResult, type VectorPath } from "@maker/core-vector";
+import { nestParts, type NestResult, type VectorPath } from "@richardmcquiston01/core-vector";
 
 interface NestingPanelProps {
   paths: VectorPath[];

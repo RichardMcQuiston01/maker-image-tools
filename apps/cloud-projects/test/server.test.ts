@@ -149,6 +149,130 @@ describe("cloud-projects server", () => {
     expect(response.status).toBe(404);
   });
 
+  describe("collaborative merging", () => {
+    async function putData(token: string, projectId: string, data: unknown, baseData?: unknown) {
+      return fetch(`${baseUrl}/projects/${projectId}`, {
+        method: "PUT",
+        headers: authHeaders(token),
+        body: JSON.stringify(baseData === undefined ? { data } : { data, baseData }),
+      });
+    }
+
+    it("without baseData, still blindly replaces data (original last-write-wins behavior)", async () => {
+      const created = await (
+        await createProject(TOKEN_1, "Mine", { objects: [{ id: "o1", value: "original" }] })
+      ).json();
+
+      const response = await putData(TOKEN_1, created.project.id, { objects: [] });
+      expect(response.status).toBe(200);
+      expect((await response.json()).project.data).toEqual({ objects: [] });
+    });
+
+    it("keeps both collaborators' edits when they touch different objects concurrently", async () => {
+      const base = {
+        objects: [
+          { id: "o1", value: "v1" },
+          { id: "o2", value: "v1" },
+        ],
+      };
+      const created = await (await createProject(TOKEN_1, "Mine", base)).json();
+      await fetch(`${baseUrl}/projects/${created.project.id}/collaborators`, {
+        method: "POST",
+        headers: authHeaders(TOKEN_1),
+        body: JSON.stringify({ userId: USER_2 }),
+      });
+
+      // Collaborator 2 saves first, editing only o2.
+      const theirEdit = {
+        objects: [
+          { id: "o1", value: "v1" },
+          { id: "o2", value: "edited by 2" },
+        ],
+      };
+      const theirResponse = await putData(TOKEN_2, created.project.id, theirEdit, base);
+      expect(theirResponse.status).toBe(200);
+
+      // Owner saves next, based on the same original fetch, editing only o1 -
+      // neither knows about the other's concurrent edit.
+      const ourEdit = {
+        objects: [
+          { id: "o1", value: "edited by 1" },
+          { id: "o2", value: "v1" },
+        ],
+      };
+      const ourResponse = await putData(TOKEN_1, created.project.id, ourEdit, base);
+      expect(ourResponse.status).toBe(200);
+      expect((await ourResponse.json()).project.data).toEqual({
+        objects: [
+          { id: "o1", value: "edited by 1" },
+          { id: "o2", value: "edited by 2" },
+        ],
+      });
+    });
+
+    it("resolves two concurrent edits to the *same* object with last-writer-wins", async () => {
+      const base = { objects: [{ id: "o1", value: "v1" }] };
+      const created = await (await createProject(TOKEN_1, "Mine", base)).json();
+
+      await putData(TOKEN_1, created.project.id, { objects: [{ id: "o1", value: "first" }] }, base);
+      const response = await putData(
+        TOKEN_1,
+        created.project.id,
+        { objects: [{ id: "o1", value: "second (last writer)" }] },
+        base,
+      );
+      expect(response.status).toBe(200);
+      expect((await response.json()).project.data).toEqual({
+        objects: [{ id: "o1", value: "second (last writer)" }],
+      });
+    });
+
+    it("keeps a concurrent edit instead of silently losing it to a stale unedited resave", async () => {
+      const base = {
+        objects: [
+          { id: "o1", value: "v1" },
+          { id: "o2", value: "v1" },
+        ],
+      };
+      const created = await (await createProject(TOKEN_1, "Mine", base)).json();
+
+      // Someone edits o2.
+      const editedElsewhere = {
+        objects: [
+          { id: "o1", value: "v1" },
+          { id: "o2", value: "edited elsewhere" },
+        ],
+      };
+      await putData(TOKEN_1, created.project.id, editedElsewhere, base);
+
+      // A stale client resaves the whole document unchanged from its own
+      // original fetch (it never touched o2, so it shouldn't clobber it).
+      const response = await putData(TOKEN_1, created.project.id, base, base);
+      expect(response.status).toBe(200);
+      expect((await response.json()).project.data).toEqual(editedElsewhere);
+    });
+
+    it("keeps an edit over a concurrent delete of the same object", async () => {
+      const base = { objects: [{ id: "o1", value: "v1" }] };
+      const created = await (await createProject(TOKEN_1, "Mine", base)).json();
+
+      // Someone deletes o1.
+      await putData(TOKEN_1, created.project.id, { objects: [] }, base);
+
+      // A concurrent edit to o1, based on the same original fetch, should survive.
+      const response = await putData(
+        TOKEN_1,
+        created.project.id,
+        { objects: [{ id: "o1", value: "edited concurrently" }] },
+        base,
+      );
+      expect(response.status).toBe(200);
+      expect((await response.json()).project.data).toEqual({
+        objects: [{ id: "o1", value: "edited concurrently" }],
+      });
+    });
+  });
+
   it("deletes a project via DELETE", async () => {
     const created = await (await createProject(TOKEN_1, "Doomed", { v: 1 })).json();
 
@@ -501,6 +625,10 @@ describe("cloud-projects server", () => {
         expect(first.type).toBe("project");
         expect(first.project.data).toEqual({ v: 1 });
 
+        const presence = (await live.nextEvent()) as { type: string; viewers: string[] };
+        expect(presence.type).toBe("presence");
+        expect(presence.viewers).toEqual([USER_1]);
+
         const putResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
           method: "PUT",
           headers: authHeaders(TOKEN_1),
@@ -527,6 +655,7 @@ describe("cloud-projects server", () => {
       const live = await connectLive(TOKEN_2, created.project.id);
       try {
         await live.nextEvent(); // initial state
+        await live.nextEvent(); // presence broadcast on connect
 
         const deleteResponse = await fetch(`${baseUrl}/projects/${created.project.id}`, {
           method: "DELETE",
@@ -538,6 +667,41 @@ describe("cloud-projects server", () => {
         expect(event.type).toBe("deleted");
       } finally {
         live.close();
+      }
+    });
+
+    it("broadcasts an updated viewer list when a second viewer connects, and again when one disconnects", async () => {
+      const created = await (await createProject(TOKEN_1, "Mine", { v: 1 })).json();
+      await fetch(`${baseUrl}/projects/${created.project.id}/collaborators`, {
+        method: "POST",
+        headers: authHeaders(TOKEN_1),
+        body: JSON.stringify({ userId: USER_2 }),
+      });
+
+      const first = await connectLive(TOKEN_1, created.project.id);
+      try {
+        await first.nextEvent(); // initial state
+        const soloPresence = (await first.nextEvent()) as { type: string; viewers: string[] };
+        expect(soloPresence.type).toBe("presence");
+        expect(soloPresence.viewers).toEqual([USER_1]);
+
+        const second = await connectLive(TOKEN_2, created.project.id);
+        try {
+          await second.nextEvent(); // initial state
+          await second.nextEvent(); // presence, sent to the connection that just opened too
+
+          const bothPresence = (await first.nextEvent()) as { type: string; viewers: string[] };
+          expect(bothPresence.type).toBe("presence");
+          expect(bothPresence.viewers).toEqual([USER_1, USER_2]);
+        } finally {
+          second.close();
+        }
+
+        const soloAgain = (await first.nextEvent()) as { type: string; viewers: string[] };
+        expect(soloAgain.type).toBe("presence");
+        expect(soloAgain.viewers).toEqual([USER_1]);
+      } finally {
+        first.close();
       }
     });
 

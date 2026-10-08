@@ -13,6 +13,7 @@ import {
   searchPresets,
   submitPreset,
 } from "../src/presets.js";
+import { voteOnPreset } from "../src/votes.js";
 import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 
 // apps/accounts assigns real users a Postgres-generated UUID; `submitted_by`/
@@ -20,6 +21,8 @@ import { requireTestPool, resetTestDb, setupTestDb } from "./testDb.js";
 // literals too.
 const USER_1 = "11111111-1111-1111-1111-111111111111";
 const USER_2 = "22222222-2222-2222-2222-222222222222";
+const VOTER_1 = "33333333-3333-3333-3333-333333333333";
+const VOTER_2 = "44444444-4444-4444-4444-444444444444";
 
 function baseSubmission(overrides: Partial<Parameters<typeof submitPreset>[1]> = {}) {
   return {
@@ -158,6 +161,50 @@ describe("presets", () => {
         (await searchPresets(pool, { material: "plywood birch" })).map((p) => p.material),
       ).toEqual(["baltic birch plywood 3mm"]);
       expect(await searchPresets(pool, { material: "maple" })).toEqual([]);
+    });
+
+    it("prefers a well-regarded older version over a downvoted latest version", async () => {
+      const v1 = await submitPreset(pool, baseSubmission());
+      await approvePreset(pool, v1.id, USER_2);
+      await voteOnPreset(pool, v1.id, VOTER_1, 1);
+      await voteOnPreset(pool, v1.id, VOTER_2, 1);
+
+      const v2 = await submitPreset(pool, baseSubmission({ speed: 275 }));
+      await approvePreset(pool, v2.id, USER_2);
+      await voteOnPreset(pool, v2.id, VOTER_1, -1);
+      await voteOnPreset(pool, v2.id, VOTER_2, -1);
+
+      const results = await searchPresets(pool, {});
+      expect(results).toHaveLength(1);
+      expect(results[0]!.version).toBe(1);
+      expect(results[0]!.speed).toBe(300);
+    });
+
+    it("prefers a well-regarded newer version over an unvoted older one", async () => {
+      const v1 = await submitPreset(pool, baseSubmission());
+      await approvePreset(pool, v1.id, USER_2);
+
+      const v2 = await submitPreset(pool, baseSubmission({ speed: 275 }));
+      await approvePreset(pool, v2.id, USER_2);
+      await voteOnPreset(pool, v2.id, VOTER_1, 1);
+
+      const results = await searchPresets(pool, {});
+      expect(results[0]!.version).toBe(2);
+    });
+
+    it("falls back to the highest version when net vote scores tie", async () => {
+      const v1 = await submitPreset(pool, baseSubmission());
+      await approvePreset(pool, v1.id, USER_2);
+      await voteOnPreset(pool, v1.id, VOTER_1, 1);
+      await voteOnPreset(pool, v1.id, VOTER_2, -1);
+
+      const v2 = await submitPreset(pool, baseSubmission({ speed: 275 }));
+      await approvePreset(pool, v2.id, USER_2);
+      await voteOnPreset(pool, v2.id, VOTER_1, 1);
+      await voteOnPreset(pool, v2.id, VOTER_2, -1);
+
+      const results = await searchPresets(pool, {});
+      expect(results[0]!.version).toBe(2);
     });
   });
 

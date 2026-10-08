@@ -1,4 +1,4 @@
-import { boundingBoxOfPath } from "@maker/core-vector";
+import { boundingBoxOfPath } from "@richardmcquiston01/core-vector";
 import { describe, expect, it } from "vitest";
 import { generateEarringPair, generateKeychainBlank } from "../src/keychain.js";
 

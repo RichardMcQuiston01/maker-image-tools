@@ -65,32 +65,33 @@ export S3_SECRET_ACCESS_KEY=makermaker
 
 ## API
 
-| Route                                    | Body / Query         | Auth                            | Response                                                                                                                                                 |
-| ---------------------------------------- | -------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /projects`                         | `{ name, data }`     | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                        |
-| `GET /projects`                          | —                    | `Authorization: Bearer <token>` | `200 { projects }` — owned and collaborated-on, summaries only (no `data`), newest-updated first / `401`                                                 |
-| `GET /projects/:id`                      | —                    | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or the caller is neither its owner nor a collaborator / `401`                                     |
-| `PUT /projects/:id`                      | `{ name?, data? }`   | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the project over its owner's quota |
-| `DELETE /projects/:id`                   | —                    | `Authorization: Bearer <token>` | `204` — owner-only / `403` if the caller is a collaborator, not the owner / `404` / `401`                                                                |
-| `POST /projects/:id/share`               | —                    | `Authorization: Bearer <token>` | `200 { token }` — owner-only, creates a share token if the project doesn't already have one / `403` / `404` / `401`                                      |
-| `DELETE /projects/:id/share`             | —                    | `Authorization: Bearer <token>` | `204` — owner-only, revokes the project's share token / `403` / `404` / `401`                                                                            |
-| `PUT /projects/:id/thumbnail`            | raw `image/png` body | `Authorization: Bearer <token>` | `204` / `400` for a non-`image/png` body / `404` / `401`                                                                                                 |
-| `GET /projects/:id/thumbnail`            | —                    | `Authorization: Bearer <token>` | `200` raw `image/png` body / `404` if missing or inaccessible / `401`                                                                                    |
-| `DELETE /projects/:id/thumbnail`         | —                    | `Authorization: Bearer <token>` | `204` — removes the thumbnail if there is one (idempotent) / `404` / `401`                                                                               |
-| `GET /projects/:id/collaborators`        | —                    | `Authorization: Bearer <token>` | `200 { collaborators }` / `404` if the caller has no access to the project / `401`                                                                       |
-| `POST /projects/:id/collaborators`       | `{ userId }`         | `Authorization: Bearer <token>` | `200 { collaborators }` — owner-only, idempotent / `400` if `userId` is the project's own owner / `403` / `404` / `401`                                  |
-| `DELETE /projects/:id/collaborators/:id` | —                    | `Authorization: Bearer <token>` | `204` — owner-only, idempotent / `403` / `404` / `401`                                                                                                   |
-| `GET /projects/:id/live`                 | `?token=<token>`     | via `token` query parameter     | `200`, a `text/event-stream` of live updates for as long as the connection stays open / `404` if inaccessible / `401` missing/invalid/expired token      |
-| `GET /shared/:token`                     | —                    | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                     |
-| `GET /shared/:token/thumbnail`           | —                    | —                               | `200` raw `image/png` body (no auth) / `404` if the token is unknown/revoked or has no thumbnail                                                         |
+| Route                                    | Body / Query                  | Auth                            | Response                                                                                                                                                 |
+| ---------------------------------------- | ----------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /projects`                         | `{ name, data }`              | `Authorization: Bearer <token>` | `201 { project }` / `400` for a blank `name` or missing `data` / `401` invalid/expired token / `402` over the caller's plan quota                        |
+| `GET /projects`                          | —                             | `Authorization: Bearer <token>` | `200 { projects }` — owned and collaborated-on, summaries only (no `data`), newest-updated first / `401`                                                 |
+| `GET /projects/:id`                      | —                             | `Authorization: Bearer <token>` | `200 { project }` (includes `data`) / `404` if missing or the caller is neither its owner nor a collaborator / `401`                                     |
+| `PUT /projects/:id`                      | `{ name?, data?, baseData? }` | `Authorization: Bearer <token>` | `200 { project }` — updates whichever of `name`/`data` is present / `404` / `401` / `402` if the new `data` would put the project over its owner's quota |
+| `DELETE /projects/:id`                   | —                             | `Authorization: Bearer <token>` | `204` — owner-only / `403` if the caller is a collaborator, not the owner / `404` / `401`                                                                |
+| `POST /projects/:id/share`               | —                             | `Authorization: Bearer <token>` | `200 { token }` — owner-only, creates a share token if the project doesn't already have one / `403` / `404` / `401`                                      |
+| `DELETE /projects/:id/share`             | —                             | `Authorization: Bearer <token>` | `204` — owner-only, revokes the project's share token / `403` / `404` / `401`                                                                            |
+| `PUT /projects/:id/thumbnail`            | raw `image/png` body          | `Authorization: Bearer <token>` | `204` / `400` for a non-`image/png` body / `404` / `401`                                                                                                 |
+| `GET /projects/:id/thumbnail`            | —                             | `Authorization: Bearer <token>` | `200` raw `image/png` body / `404` if missing or inaccessible / `401`                                                                                    |
+| `DELETE /projects/:id/thumbnail`         | —                             | `Authorization: Bearer <token>` | `204` — removes the thumbnail if there is one (idempotent) / `404` / `401`                                                                               |
+| `GET /projects/:id/collaborators`        | —                             | `Authorization: Bearer <token>` | `200 { collaborators }` / `404` if the caller has no access to the project / `401`                                                                       |
+| `POST /projects/:id/collaborators`       | `{ userId }`                  | `Authorization: Bearer <token>` | `200 { collaborators }` — owner-only, idempotent / `400` if `userId` is the project's own owner / `403` / `404` / `401`                                  |
+| `DELETE /projects/:id/collaborators/:id` | —                             | `Authorization: Bearer <token>` | `204` — owner-only, idempotent / `403` / `404` / `401`                                                                                                   |
+| `GET /projects/:id/live`                 | `?token=<token>`              | via `token` query parameter     | `200`, a `text/event-stream` of live updates for as long as the connection stays open / `404` if inaccessible / `401` missing/invalid/expired token      |
+| `GET /shared/:token`                     | —                             | —                               | `200 { project }` (includes `data`, no auth) / `404` if the token is unknown/revoked                                                                     |
+| `GET /shared/:token/thumbnail`           | —                             | —                               | `200` raw `image/png` body (no auth) / `404` if the token is unknown/revoked or has no thumbnail                                                         |
 
 `project` is `{ id, name, createdAt, updatedAt, hasThumbnail, data, role }`, where `data` is an
 arbitrary JSON-serializable payload — `apps/web` is expected to pass its `VectorDocument` (or
-similar) here verbatim; this service never inspects its shape. `hasThumbnail` tells a caller
-whether it's worth fetching `GET .../thumbnail` at all, instead of issuing a request that's
-guaranteed to `404`. `role` is `"owner"` or `"collaborator"` (see "Collaborators" below) - omitted
-from `GET /shared/:token`'s response, since an anonymous share-link viewer has neither
-relationship to the project.
+similar) here verbatim; this service never inspects its shape, with one deliberate, narrow
+exception - see "Collaborative merging" below. `hasThumbnail` tells a caller whether it's worth
+fetching `GET .../thumbnail` at all, instead of issuing a request that's guaranteed to `404`.
+`role` is `"owner"` or `"collaborator"` (see "Collaborators" below) - omitted from
+`GET /shared/:token`'s response, since an anonymous share-link viewer has neither relationship to
+the project. `PUT /projects/:id`'s `baseData` is likewise covered there.
 
 ## Access control
 
@@ -141,26 +142,94 @@ anything.
 `"collaborator"`) in their response, telling `apps/web` which controls to show for a given project
 without it having to separately track "is this my project" itself.
 
+## Collaborative merging
+
+Two collaborators editing the same project at the same moment used to just overwrite each other on
+`PUT` - whoever's save landed last silently discarded the other's. `PUT /projects/:id` now merges
+instead of replacing, whenever the caller supplies a third field alongside `name`/`data`: `baseData`,
+the `data` this same caller fetched (via `GET`) before making the edits they're now saving.
+`crdtMerge.ts`'s `mergeProjectData(baseData, data, currentlyStored)` does a three-way diff and
+resolves it per object, not per whole document, so a second collaborator's own concurrent edit -
+already written to the project since this caller's `baseData` was fetched - doesn't just get thrown
+away:
+
+- Two edits to **different** objects/layers both survive - neither PUT knows about the other's
+  edit, and neither has to for both to end up in the merged result.
+- Two edits to the **same** object/layer resolve last-write-wins, same as this service always did -
+  just scoped to that one object now, not the whole project.
+- An edit always beats a concurrent delete of the same object, on either side - silently discarding
+  a collaborator's real edit because someone else deleted that object at the same moment would be
+  worse than un-deleting something they can just delete again.
+- A save that only reorders layers (no object content changed) still applies its reorder, unless
+  someone else's concurrent save reordered too, in which case last-write-wins applies to the order
+  the same way it does to content.
+
+This is a state-based, not operation-based, merge - a plain three-way diff against the one
+`baseData` snapshot the caller already had, not a transform matrix over a stream of edit operations
+(OT) or a per-replica op log (a CRDT library like Yjs/Automerge). It works because `apps/web`'s
+`VectorDocument` already gives every layer and every object a stable `id` - `mergeProjectData` only
+recognizes fields shaped as an array of `{ id, ... }` objects (`layers`/`objects`); this service
+still never assumes `data`'s shape in general (see the top of this README), so anything that doesn't
+duck-type that way, for a whole document or just one field of it, falls back untouched to a plain
+replace of that field - the exact behavior this service had before this feature existed. Omitting
+`baseData` altogether does the same: a plain replace, for any caller not participating in the merge
+protocol.
+
+`apps/web`'s `CloudProjectsPanel` keeps the exact `data` it fetched for whichever project is loaded
+in the editor and sends it back as `baseData` on every "Save changes" (its button to resave into an
+already-loaded project, as opposed to "Save", which always forks a brand-new one) - see that
+component for how it refreshes its stored copy from each save's merged result, so the next save
+diffs against what's actually stored rather than the original, now-stale fetch.
+
 ## Live updates
 
 `GET /projects/:id/live` is a `text/event-stream` (Server-Sent Events) connection: on connect it
 immediately sends the project's current state as one `{ "type": "project", "project": {...} }`
 message, then a further message of the same shape every time _anyone_ (owner or any collaborator)
-successfully `PUT`s the project, plus `{ "type": "deleted" }` if it's deleted and
-`{ "type": "collaborators", "collaborators": [...] }` when the collaborator list changes. This is
-how `apps/web` notices a collaborator's save without polling - see its `CloudProjectsPanel` for how
-it surfaces this as a dismissible "updated elsewhere, reload?" banner rather than silently
-overwriting whatever's open in the editor.
+successfully `PUT`s the project, plus `{ "type": "deleted" }` if it's deleted,
+`{ "type": "collaborators", "collaborators": [...] }` when the collaborator list changes, and
+`{ "type": "presence", "viewers": [...] }` whenever a viewer connects or disconnects (see
+"Presence" below). This is how `apps/web` notices a collaborator's save without polling - see its
+`CloudProjectsPanel` for how it surfaces this as a dismissible "updated elsewhere, reload?" banner
+rather than silently overwriting whatever's open in the editor.
 
-This is deliberately last-write-wins broadcast, not operational-transform/CRDT-style merging -
-concurrent edits to the same project still just overwrite each other on `PUT`, the same as before
-this feature existed; live updates only make that visible instead of silent. `EventSource` can't
-set custom headers, so auth here is a `?token=` query parameter (validated with the same
-`verifySession` as everywhere else) rather than an `Authorization` header. `liveUpdates.ts`'s
-subscriber registry is in-memory and per-process (`Map<projectId, Set<ServerResponse>>`) - fine
-for this service's single-dev-server-instance scope like every other `apps/*` service in this
-repo, but a multi-replica production deployment would need a real pub/sub backend (e.g. Redis) to
-fan a write on one instance out to viewers connected to another.
+This broadcasts each save as-is; it's "Collaborative merging" below (`PUT /projects/:id`'s
+`baseData`) that keeps two concurrent saves from overwriting each other's changes in the first
+place, not this stream. `EventSource` can't set custom headers, so auth here is a `?token=` query
+parameter (validated with the same `verifySession` as everywhere else) rather than an
+`Authorization` header. `liveUpdates.ts`'s subscriber registry (`Map<projectId, Map<ServerResponse,
+userId>>`) is itself still in-memory and per-process, but `startCrossInstanceRelay` fans every
+`publish()` out over Postgres LISTEN/NOTIFY to every other `apps/cloud-projects` instance sharing
+the same database, so a deployment with more than one instance behind a load balancer still
+delivers a save on one instance to a viewer connected to another. `project` events are relayed as a
+lightweight "refresh" signal rather than carrying the (potentially large) project data itself -
+NOTIFY payloads are capped at 8000 bytes by Postgres - so a receiving instance re-fetches the
+project from the database instead; `deleted` and `collaborators` events are small enough to embed
+directly.
+
+## Presence
+
+Every open `/live` connection is tagged with the userId it was authenticated as (`liveUpdates.ts`'s
+subscriber registry maps each connection to a userId, not just tracking a bare count), so alongside
+project/collaborator/delete broadcasts the same stream also carries
+`{ "type": "presence", "viewers": [userId, ...] }` - the distinct set of userIds currently watching
+this project, sent right after a viewer connects and again right after one disconnects. The
+connecting/disconnecting viewer is included in their own broadcast (the server doesn't special-case
+"everyone but me"); `apps/web`'s `CloudProjectsPanel` filters its own signed-in user id out client-side
+before rendering an "also viewing: ..." line, the same raw-userId display convention "Collaborators"
+above already uses (no email is resolved). Two connections for the same user (e.g. two browser tabs)
+only ever count once - the viewer list is deduplicated by userId, not by connection.
+
+Presence shares "Live updates"' cross-instance relay: each instance also relays its own local
+viewers for a project (never an aggregate, to avoid one instance misattributing another's count) on
+every presence change and on a periodic heartbeat (every 10s by default), and `currentViewers`
+returns the union of this instance's local viewers and every other instance's last-known snapshot.
+The heartbeat exists so a newly-connected or newly-restarted instance learns about viewers already
+connected elsewhere even if nothing else changes in the meantime - at the cost of a bounded
+propagation delay (up to one heartbeat interval) rather than instant cross-instance consistency.
+Snapshots older than 3.5 heartbeats are swept from the cache, so an instance that disappears without
+a graceful shutdown (crash, kill -9) doesn't leave its last-seen viewers stuck in every other
+instance's presence list forever.
 
 ## Storage quotas
 
@@ -171,6 +240,7 @@ project count and total stored bytes, based on the caller's `@maker/billing` pla
 | --------- | ------------ | ------------------- |
 | `free`    | 10           | 5 MB                |
 | `pro`     | 200          | 250 MB              |
+| `studio`  | 1000         | 1 GB                |
 
 `billingClient.ts`'s `getPlanTier(userId)` calls `@maker/billing`'s `GET /subscription?userId=` to
 find the caller's tier (defaulting to `free` for anyone with no active subscription, matching
@@ -195,19 +265,6 @@ the design's visible vector paths onto a small canvas) - anything else is reject
 orphaned in the bucket. `GET /shared/:token/thumbnail` mirrors `GET /shared/:token`: no auth
 required, since a share link's whole point is letting anyone with it view the project - preview
 included.
-
-## What's not here yet
-
-- **Real-time collaborative editing (OT/CRDT)** — "Collaborators" and "Live updates" above cover
-  shared write access and a last-write-wins broadcast of each save, but two people editing the same
-  project at the same moment still just overwrite each other on `PUT`; there's no operational
-  transform/CRDT merging of concurrent, in-flight changes the way e.g. Google Docs has.
-- **Presence** ("who else is viewing this right now") — the live-updates stream broadcasts project
-  changes, not who's currently connected to it.
-- **Multi-instance live updates** — see "Live updates" above; `liveUpdates.ts`'s subscriber registry
-  is per-process, so a deployment with more than one `apps/cloud-projects` instance behind a load
-  balancer would need a shared pub/sub backend for a save on one instance to reach a viewer
-  connected to another.
 
 ## Testing note
 

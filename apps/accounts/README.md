@@ -1,7 +1,7 @@
 # @maker/accounts
 
 User identity for the platform-growth services introduced in `ROADMAP.md` Stage 6: email/password
-signup and login, OAuth login (Google/GitHub/Discord), bearer-token sessions, a `planTier` field for
+signup and login, OAuth login (Google/GitHub/Discord/Microsoft), bearer-token sessions, a `planTier` field for
 `@maker/billing` to manage, and a `role` field (`user`/`moderator`) other services can use to gate
 privileged actions — currently consumed by `apps/web`'s moderation UI for
 `@maker/community-library`/`@maker/material-db`. Lives in this monorepo as its own workspace app
@@ -18,28 +18,31 @@ first request (tracked in a `_migrations` table), so there's no separate migrate
 
 ## Environment variables
 
-| Variable                | Required               | Default | Used by                                                                                   |
-| ----------------------- | ---------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `PORT`                  | no                     | `8788`  | server listen port                                                                        |
-| `DATABASE_URL`          | yes                    | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_accounts` |
-| `MODERATOR_EMAILS`      | no                     | —       | comma-separated emails to auto-promote to the `moderator` role (see below)                |
-| `ACCOUNTS_BASE_URL`     | yes, for OAuth         | —       | this service's own publicly reachable base URL, used to build the OAuth `redirect_uri`    |
-| `WEB_APP_URL`           | yes, for OAuth         | —       | `apps/web`'s origin; the OAuth callback redirects here with a token (or an error)         |
-| `GOOGLE_CLIENT_ID`      | yes, for Google login  | —       | Google OAuth app client ID                                                                |
-| `GOOGLE_CLIENT_SECRET`  | yes, for Google login  | —       | Google OAuth app client secret                                                            |
-| `GITHUB_CLIENT_ID`      | yes, for GitHub login  | —       | GitHub OAuth app client ID                                                                |
-| `GITHUB_CLIENT_SECRET`  | yes, for GitHub login  | —       | GitHub OAuth app client secret                                                            |
-| `DISCORD_CLIENT_ID`     | yes, for Discord login | —       | Discord OAuth app client ID                                                               |
-| `DISCORD_CLIENT_SECRET` | yes, for Discord login | —       | Discord OAuth app client secret                                                           |
-| `MAIL_API_KEY`          | yes, for mail sending  | —       | API key for the email provider (see "Password reset"/"Email verification" below)          |
-| `MAIL_FROM_ADDRESS`     | yes, for mail sending  | —       | the `From` address on emails this service sends                                           |
+| Variable                  | Required                 | Default | Used by                                                                                   |
+| ------------------------- | ------------------------ | ------- | ----------------------------------------------------------------------------------------- |
+| `PORT`                    | no                       | `8788`  | server listen port                                                                        |
+| `DATABASE_URL`            | yes                      | —       | Postgres connection string, e.g. `postgres://user:password@localhost:5432/maker_accounts` |
+| `MODERATOR_EMAILS`        | no                       | —       | comma-separated emails to auto-promote to the `moderator` role (see below)                |
+| `ACCOUNTS_BASE_URL`       | yes, for OAuth           | —       | this service's own publicly reachable base URL, used to build the OAuth `redirect_uri`    |
+| `WEB_APP_URL`             | yes, for OAuth           | —       | `apps/web`'s origin; the OAuth callback redirects here with a token (or an error)         |
+| `GOOGLE_CLIENT_ID`        | yes, for Google login    | —       | Google OAuth app client ID                                                                |
+| `GOOGLE_CLIENT_SECRET`    | yes, for Google login    | —       | Google OAuth app client secret                                                            |
+| `GITHUB_CLIENT_ID`        | yes, for GitHub login    | —       | GitHub OAuth app client ID                                                                |
+| `GITHUB_CLIENT_SECRET`    | yes, for GitHub login    | —       | GitHub OAuth app client secret                                                            |
+| `DISCORD_CLIENT_ID`       | yes, for Discord login   | —       | Discord OAuth app client ID                                                               |
+| `DISCORD_CLIENT_SECRET`   | yes, for Discord login   | —       | Discord OAuth app client secret                                                           |
+| `MICROSOFT_CLIENT_ID`     | yes, for Microsoft login | —       | Microsoft (Azure AD) OAuth app client ID                                                  |
+| `MICROSOFT_CLIENT_SECRET` | yes, for Microsoft login | —       | Microsoft (Azure AD) OAuth app client secret                                              |
+| `MAIL_API_KEY`            | yes, for mail sending    | —       | API key for the email provider (see "Password reset"/"Email verification" below)          |
+| `MAIL_FROM_ADDRESS`       | yes, for mail sending    | —       | the `From` address on emails this service sends                                           |
 
 Without `DATABASE_URL` set, every request responds `500` with a message explaining the variable is
 missing — matching `@maker/ai-inference`'s `GEMINI_API_KEY` handling: no silent fallback that could
 be mistaken for a working configuration. Each OAuth provider fails the same way, independently:
 signing up/logging in with email/password works with none of the OAuth variables set; hitting
 `/oauth/google/...` without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (or `/oauth/github/...`/
-`/oauth/discord/...` without their GitHub/Discord equivalents) responds `500`, and every provider
+`/oauth/discord/...`/`/oauth/microsoft/...` without their GitHub/Discord/Microsoft equivalents)
+responds `500`, and every provider
 also needs `ACCOUNTS_BASE_URL`/`WEB_APP_URL` set to complete a login. `POST /password-reset/request`
 and `POST /me/resend-verification` fail the same way without `MAIL_API_KEY`/`MAIL_FROM_ADDRESS`/
 `WEB_APP_URL` set - see "Password reset"/"Email verification" below. Signup itself never fails on
@@ -133,7 +136,7 @@ themselves by checking the `role` on the authenticated user — this service doe
 separate authorization check, and none of the other Stage 6 services validate it either. See
 `@maker/community-library`'s README for how its moderation actions are currently gated on this.
 
-## OAuth login (Google/GitHub/Discord)
+## OAuth login (Google/GitHub/Discord/Microsoft)
 
 `GET /oauth/:provider/start` redirects the browser to the provider's consent page (authorization
 code + PKCE); the provider then redirects back to `GET /oauth/:provider/callback`, which exchanges
@@ -164,13 +167,21 @@ that user id instead of running the ordinary find-or-create-by-email flow above,
 by email or creates a new user. The `(provider, providerUserId)` pair is still globally unique
 (`oauth_identities`'s primary key), so linking an identity already linked to a different account
 fails with a redirect `?error=...` the same way any other callback failure does. `apps/web`'s
-`AuthPanel` exposes this as "Connect Google" / "Connect GitHub" / "Connect Discord" links for a
-signed-in user, each carrying the current session token as `linkToken`.
+`AuthPanel` exposes this as "Connect Google" / "Connect GitHub" / "Connect Discord" /
+"Connect Microsoft" links for a signed-in user, each carrying the current session token as
+`linkToken`.
 
-**Testing note:** there's no way to register a real Google/GitHub/Discord OAuth app or reach any
-provider's servers from this sandbox, so `test/oauth.test.ts` runs the exact same code path against
-a tiny local fake HTTP provider (`test/fakeOAuthProvider.ts`) instead, via each provider's URL
-override env vars (e.g. `GOOGLE_TOKEN_URL`, `GITHUB_API_BASE_URL`, `DISCORD_API_BASE_URL`) - real
+Microsoft's provider (`microsoftProvider` in `oauth.ts`) fetches user info from Microsoft Graph's
+`GET /v1.0/me` rather than an OIDC userinfo endpoint like Google's, and falls back from `mail` to
+`userPrincipalName` for the email - `mail` is `null` for some accounts (a personal Microsoft
+account, or a work/school account with no mailbox), while `userPrincipalName` is always present and
+is conventionally the sign-in email, the same email-fallback shape GitHub's provider already uses.
+
+**Testing note:** there's no way to register a real Google/GitHub/Discord/Microsoft OAuth app or
+reach any provider's servers from this sandbox, so `test/oauth.test.ts` runs the exact same code
+path against a tiny local fake HTTP provider (`test/fakeOAuthProvider.ts`) instead, via each
+provider's URL override env vars (e.g. `GOOGLE_TOKEN_URL`, `GITHUB_API_BASE_URL`,
+`DISCORD_API_BASE_URL`, `MICROSOFT_API_BASE_URL`) - real
 PKCE/state validation, real token exchange, real account creation/linking, just pointed at
 localhost instead of the real provider. What that can't cover is the real provider's own consent
 screen and redirect behavior; a deployment enabling one needs to register a real OAuth app
@@ -242,9 +253,9 @@ no urgency to confirming an email the way there is to regaining account access).
 
 ## What's not here yet
 
-- **Providers beyond Google/GitHub/Discord** — `oauth.ts`'s `OAuthProvider` shape is
+- **Providers beyond Google/GitHub/Discord/Microsoft** — `oauth.ts`'s `OAuthProvider` shape is
   provider-agnostic (any provider is just a new factory function keyed by name), but only these
-  three are wired up.
+  four are wired up.
 
 ## Testing note
 

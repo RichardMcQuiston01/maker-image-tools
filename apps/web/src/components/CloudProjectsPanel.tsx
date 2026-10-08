@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { VectorDocument } from "@maker/core-vector";
+import type { VectorDocument } from "@richardmcquiston01/core-vector";
 import { useAuth } from "../hooks/useAuth";
 import { ACCOUNTS_URL } from "../lib/accountsUrl";
 import { CLOUD_PROJECTS_URL } from "../lib/cloudProjectsUrl";
@@ -26,7 +26,20 @@ interface Collaborator {
 type LiveEvent =
   | { type: "project"; project: { data: VectorDocument } }
   | { type: "deleted" }
-  | { type: "collaborators"; collaborators: Collaborator[] };
+  | { type: "collaborators"; collaborators: Collaborator[] }
+  | { type: "presence"; viewers: string[] };
+
+/**
+ * Renders the "who else is looking at this" line for the project currently
+ * open in the editor - `viewers` always includes the signed-in user
+ * themself (the server counts every open `/live` connection, including
+ * this one), so this filters `selfId` out before deciding what to show.
+ */
+function describePresence(viewers: string[], selfId: string | undefined): string {
+  const others = viewers.filter((id) => id !== selfId);
+  if (others.length === 0) return "You're the only one viewing this project right now.";
+  return `Also viewing: ${others.join(", ")}`;
+}
 
 /**
  * Fetches a project's thumbnail with the caller's bearer token (an <img
@@ -127,6 +140,14 @@ export function CloudProjectsPanel({
   // for the project actually open right now.
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const [liveNotice, setLiveNotice] = useState<"updated" | "deleted" | null>(null);
+  const [viewersByProject, setViewersByProject] = useState<Record<string, string[]>>({});
+  // The exact `data` last fetched for each project id - not state, since it's
+  // bookkeeping for "Save changes"'s merge, not something a render should
+  // react to. Seeded by handleLoad (and refreshed after every successful
+  // "Save changes"), it's what apps/cloud-projects's per-object merge diffs
+  // a resave against to tell "I edited this" from "I'm just carrying forward
+  // a stale copy" - see that service's README "Collaborative merging".
+  const baseDataRef = useRef<Record<string, unknown>>({});
 
   const refreshProjects = useCallback(async (sessionToken: string) => {
     try {
@@ -208,6 +229,7 @@ export function CloudProjectsPanel({
           throw new Error(`Load failed with ${response.status}`);
         }
         const body = (await response.json()) as { project: { data: VectorDocument } };
+        baseDataRef.current[id] = body.project.data;
         onLoadDocument(body.project.data);
         setLoadedProjectId(id);
         setLiveNotice(null);
@@ -222,6 +244,58 @@ export function CloudProjectsPanel({
       }
     },
     [token, onLoadDocument],
+  );
+
+  // Resaves the currently-open editor document back into the project it was
+  // loaded from - unlike handleSave (which always forks a brand-new
+  // project), this PUTs to the existing one, sending along baseDataRef's
+  // snapshot so apps/cloud-projects can merge per-object instead of blindly
+  // overwriting a collaborator's concurrent edit (see that service's README
+  // "Collaborative merging"). Available to the owner and any collaborator
+  // alike - both can edit a project's data per "Collaborators" in that
+  // README.
+  const handleSaveChanges = useCallback(
+    async (id: string) => {
+      if (!token) return;
+      try {
+        setBusy(true);
+        setError(null);
+        const response = await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ data: vectorDocument, baseData: baseDataRef.current[id] }),
+        });
+        if (!response.ok) {
+          setError(await readErrorMessage(response, "Save failed"));
+          return;
+        }
+        const { project } = (await response.json()) as { project: { data: VectorDocument } };
+        baseDataRef.current[id] = project.data;
+        try {
+          const thumbnail = await renderThumbnail(vectorDocument, sourceWidth, sourceHeight);
+          if (thumbnail) {
+            await fetch(`${CLOUD_PROJECTS_URL}/projects/${id}/thumbnail`, {
+              method: "PUT",
+              headers: { "Content-Type": "image/png", Authorization: `Bearer ${token}` },
+              body: thumbnail,
+            });
+          }
+        } catch {
+          // Best-effort - a thumbnail failure shouldn't block a successful save.
+        }
+        setLiveNotice(null);
+        await refreshProjects(token);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `${err.message} (is the @maker/cloud-projects dev server running?)`
+            : "Failed to save changes",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [token, vectorDocument, sourceWidth, sourceHeight, refreshProjects],
   );
 
   // Subscribes to live updates for whichever project is currently loaded in
@@ -252,9 +326,17 @@ export function CloudProjectsPanel({
           ...current,
           [loadedProjectId]: parsed.collaborators,
         }));
+      } else if (parsed.type === "presence") {
+        setViewersByProject((current) => ({ ...current, [loadedProjectId]: parsed.viewers }));
       }
     };
-    return () => source.close();
+    return () => {
+      source.close();
+      setViewersByProject((current) => {
+        const { [loadedProjectId]: _removed, ...rest } = current;
+        return rest;
+      });
+    };
   }, [loadedProjectId, token]);
 
   const handleReloadLive = useCallback(() => {
@@ -556,10 +638,24 @@ export function CloudProjectsPanel({
               {project.role === "collaborator" && (
                 <span className="ai-panel__hint">Shared with you</span>
               )}
+              {loadedProjectId === project.id && viewersByProject[project.id] && (
+                <p className="ai-panel__hint cloud-projects-panel__presence">
+                  {describePresence(viewersByProject[project.id]!, user?.id)}
+                </p>
+              )}
               <div className="ai-panel__actions">
                 <button type="button" disabled={busy} onClick={() => void handleLoad(project.id)}>
                   Load
                 </button>
+                {loadedProjectId === project.id && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleSaveChanges(project.id)}
+                  >
+                    Save changes
+                  </button>
+                )}
                 {project.role !== "collaborator" && (
                   <>
                     <button

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { imageToHeightmapStl } from "@maker/core-image";
+import { imageToHeightmapStl } from "@richardmcquiston01/core-image";
 import { downloadBlob } from "../lib/download";
 
 interface HeightmapPanelProps {

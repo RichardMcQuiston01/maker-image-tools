@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { createImageData, imageToHeightmapStl } from "@maker/core-image";
+import { createImageData, imageToHeightmapStl } from "@richardmcquiston01/core-image";
 import { decodeDepthMap, encodeRgbaImage, type DepthMap } from "@maker/ai-inference/wire";
 import { AI_INFERENCE_URL } from "../lib/aiInferenceUrl";
 import { downloadBlob } from "../lib/download";
@@ -8,7 +8,7 @@ interface DepthMapPanelProps {
   image: ImageData | null;
 }
 
-/** Renders a DepthMap's [0,1] values as a same-size grayscale ImageData, reusing @maker/core-image's existing heightmap/STL pipeline. */
+/** Renders a DepthMap's [0,1] values as a same-size grayscale ImageData, reusing @richardmcquiston01/core-image's existing heightmap/STL pipeline. */
 function depthMapToGrayscale(depth: DepthMap) {
   const image = createImageData(depth.width, depth.height);
   const data = image.data;

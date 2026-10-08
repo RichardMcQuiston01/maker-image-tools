@@ -6,6 +6,7 @@ import {
 import type { Pool } from "pg";
 import Stripe from "stripe";
 import { createPool, DatabaseConfigError, runMigrations } from "./db.js";
+import { MailerConfigError } from "./mailer.js";
 import { UnknownPlanTierError } from "./plans.js";
 import { getStripeClient, getWebhookSecret, StripeConfigError } from "./stripeClient.js";
 import {
@@ -15,9 +16,19 @@ import {
   getSubscriptionStatus,
   NoStripeCustomerError,
 } from "./subscriptions.js";
-import { getUsageTotal, InvalidUsageQuantityError, recordUsage } from "./usage.js";
+import {
+  getUsageTotal,
+  InvalidUsageQuantityError,
+  recordUsage,
+  reportAllUnreportedUsage,
+  reportUsageToStripe,
+} from "./usage.js";
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
+// Matches @maker/accounts's expired-session cleanup cadence - frequent enough
+// that usage shows up in Stripe within about an hour of being recorded,
+// infrequent enough not to hammer the DB or Stripe's API between runs.
+const USAGE_REPORT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 function setCorsHeaders(res: ServerResponse): void {
   // Wide open for local/dev use; a real deployment would restrict this to the app's own origin.
@@ -78,7 +89,12 @@ function requireQueryParam(url: URL, field: string): string {
 }
 
 function errorStatus(err: unknown): number {
-  if (err instanceof DatabaseConfigError || err instanceof StripeConfigError) return 500;
+  if (
+    err instanceof DatabaseConfigError ||
+    err instanceof StripeConfigError ||
+    err instanceof MailerConfigError
+  )
+    return 500;
   if (err instanceof UnknownPlanTierError || err instanceof InvalidUsageQuantityError) return 400;
   if (err instanceof NoStripeCustomerError) return 404;
   if (err instanceof Stripe.errors.StripeSignatureVerificationError) return 400;
@@ -99,7 +115,16 @@ function errorStatus(err: unknown): number {
 export function createServer(pool: Pool = createPool(), stripe: Stripe = getStripeClient()) {
   const migrationsReady = runMigrations(pool);
 
-  return createHttpServer((req, res) => {
+  const runScheduledUsageReport = () => {
+    reportAllUnreportedUsage(pool, stripe).catch((err: unknown) => {
+      console.error("Failed to run scheduled usage report:", err);
+    });
+  };
+  const usageReportTimer = setInterval(runScheduledUsageReport, USAGE_REPORT_INTERVAL_MS);
+  // Don't let this timer keep the process (or a test's event loop) alive.
+  usageReportTimer.unref();
+
+  const server = createHttpServer((req, res) => {
     setCorsHeaders(res);
 
     if (req.method === "OPTIONS") {
@@ -154,6 +179,14 @@ export function createServer(pool: Pool = createPool(), stripe: Stripe = getStri
           return;
         }
 
+        if (req.method === "POST" && pathname === "/usage/report") {
+          const body = await parseJsonBody(req);
+          const userId = requireString(body, "userId");
+          const result = await reportUsageToStripe(pool, stripe, userId);
+          sendJson(res, 200, result);
+          return;
+        }
+
         if (req.method === "GET" && pathname === "/usage") {
           const userId = requireQueryParam(url, "userId");
           const metric = requireQueryParam(url, "metric");
@@ -175,7 +208,11 @@ export function createServer(pool: Pool = createPool(), stripe: Stripe = getStri
             sendJson(res, 400, { error: "Missing Stripe-Signature header" });
             return;
           }
-          const event = stripe.webhooks.constructEvent(rawBody, signature, getWebhookSecret());
+          const event = await stripe.webhooks.constructEventAsync(
+            rawBody,
+            signature,
+            getWebhookSecret(),
+          );
           await applyStripeWebhookEvent(pool, stripe, event);
           sendJson(res, 200, { received: true });
           return;
@@ -188,4 +225,7 @@ export function createServer(pool: Pool = createPool(), stripe: Stripe = getStri
         sendJson(res, errorStatus(err), { error: message });
       });
   });
+
+  server.on("close", () => clearInterval(usageReportTimer));
+  return server;
 }

@@ -1,30 +1,32 @@
 import { useCallback, useState } from "react";
-import { exportImageData } from "@maker/core-image";
+import { exportImageData } from "@richardmcquiston01/core-image";
 import type { MaterialClassification } from "@maker/ai-inference";
-import { AI_INFERENCE_URL } from "../lib/aiInferenceUrl";
+import { useAuth } from "../hooks/useAuth";
+import { AI_INFERENCE_URL, readAiInferenceErrorMessage } from "../lib/aiInferenceUrl";
 
 interface MaterialDetectionPanelProps {
   image: ImageData | null;
 }
 
 export function MaterialDetectionPanel({ image }: MaterialDetectionPanelProps) {
+  const { token } = useAuth();
   const [status, setStatus] = useState<"idle" | "detecting" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MaterialClassification | null>(null);
 
   const handleDetect = useCallback(async () => {
-    if (!image) return;
+    if (!image || !token) return;
     try {
       setStatus("detecting");
       setError(null);
       const blob = await exportImageData(image, { mimeType: "image/png" });
       const response = await fetch(`${AI_INFERENCE_URL}/classify-material`, {
         method: "POST",
-        headers: { "Content-Type": blob.type },
+        headers: { "Content-Type": blob.type, Authorization: `Bearer ${token}` },
         body: blob,
       });
       if (!response.ok) {
-        throw new Error(`Material detection service responded with ${response.status}`);
+        throw new Error(await readAiInferenceErrorMessage(response, "Material detection failed"));
       }
       const classification = (await response.json()) as MaterialClassification;
       setResult(classification);
@@ -37,7 +39,7 @@ export function MaterialDetectionPanel({ image }: MaterialDetectionPanelProps) {
           : "Failed to detect material",
       );
     }
-  }, [image]);
+  }, [image, token]);
 
   return (
     <section className="ai-panel">
@@ -51,9 +53,10 @@ export function MaterialDetectionPanel({ image }: MaterialDetectionPanelProps) {
           {error}
         </p>
       )}
+      {!token && <p className="ai-panel__hint">Sign in to use AI material detection.</p>}
       <button
         type="button"
-        disabled={!image || status === "detecting"}
+        disabled={!image || !token || status === "detecting"}
         onClick={() => void handleDetect()}
       >
         {status === "detecting" ? "Detecting…" : "Detect Material"}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { VectorDocument } from "@maker/core-vector";
+import type { VectorDocument } from "@richardmcquiston01/core-vector";
 import { SharedProjectPanel } from "../components/SharedProjectPanel";
 
 function jsonResponse(status: number, body: unknown): Response {

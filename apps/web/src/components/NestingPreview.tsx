@@ -4,7 +4,7 @@ import {
   flattenPath,
   type NestResult,
   type Point,
-} from "@maker/core-vector";
+} from "@richardmcquiston01/core-vector";
 
 interface NestingPreviewProps {
   result: NestResult;

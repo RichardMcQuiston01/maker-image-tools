@@ -5,6 +5,7 @@ import {
   findStripeCustomerId,
   findUserIdByStripeCustomerId,
 } from "./customers.js";
+import { handleInvoicePaymentFailed } from "./dunning.js";
 import { planTierForPriceId, priceIdForPlan } from "./plans.js";
 
 export interface SubscriptionStatus {
@@ -137,6 +138,10 @@ export async function applyStripeWebhookEvent(
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
       await upsertSubscriptionFromStripe(pool, event.data.object);
+      return;
+    }
+    case "invoice.payment_failed": {
+      await handleInvoicePaymentFailed(pool, event.data.object);
       return;
     }
     default:

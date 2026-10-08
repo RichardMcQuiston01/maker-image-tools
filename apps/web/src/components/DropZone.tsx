@@ -1,5 +1,5 @@
 import { useCallback, useState, type ChangeEvent, type DragEvent } from "react";
-import { loadImageData, SUPPORTED_IMAGE_MIME_TYPES } from "@maker/core-image";
+import { loadImageData, SUPPORTED_IMAGE_MIME_TYPES } from "@richardmcquiston01/core-image";
 
 interface DropZoneProps {
   onImageLoaded: (image: ImageData) => void;

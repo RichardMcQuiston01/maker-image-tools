@@ -3,11 +3,14 @@ import { StripeConfigError } from "../src/stripeClient.js";
 import { planTierForPriceId, priceIdForPlan, UnknownPlanTierError } from "../src/plans.js";
 
 describe("plans", () => {
-  const originalPrice = process.env.STRIPE_PRICE_PRO;
+  const originalPro = process.env.STRIPE_PRICE_PRO;
+  const originalStudio = process.env.STRIPE_PRICE_STUDIO;
 
   afterEach(() => {
-    if (originalPrice === undefined) delete process.env.STRIPE_PRICE_PRO;
-    else process.env.STRIPE_PRICE_PRO = originalPrice;
+    if (originalPro === undefined) delete process.env.STRIPE_PRICE_PRO;
+    else process.env.STRIPE_PRICE_PRO = originalPro;
+    if (originalStudio === undefined) delete process.env.STRIPE_PRICE_STUDIO;
+    else process.env.STRIPE_PRICE_STUDIO = originalStudio;
   });
 
   it("resolves a known plan tier's Stripe Price ID from its env var", () => {
@@ -32,5 +35,17 @@ describe("plans", () => {
   it("returns undefined for a Price ID that doesn't match any known plan", () => {
     process.env.STRIPE_PRICE_PRO = "price_123";
     expect(planTierForPriceId("price_unknown")).toBeUndefined();
+  });
+
+  it("resolves the studio tier's Stripe Price ID from its own env var, independent of pro's", () => {
+    process.env.STRIPE_PRICE_PRO = "price_pro";
+    process.env.STRIPE_PRICE_STUDIO = "price_studio";
+    expect(priceIdForPlan("studio")).toBe("price_studio");
+    expect(planTierForPriceId("price_studio")).toBe("studio");
+  });
+
+  it("throws StripeConfigError when studio's price env var is unset", () => {
+    delete process.env.STRIPE_PRICE_STUDIO;
+    expect(() => priceIdForPlan("studio")).toThrow(StripeConfigError);
   });
 });

@@ -37,6 +37,11 @@ describe("AuthPanel", () => {
     expect(githubLink).toHaveAttribute("href", expect.stringContaining("/oauth/github/start"));
     const discordLink = screen.getByRole("link", { name: "Continue with Discord" });
     expect(discordLink).toHaveAttribute("href", expect.stringContaining("/oauth/discord/start"));
+    const microsoftLink = screen.getByRole("link", { name: "Continue with Microsoft" });
+    expect(microsoftLink).toHaveAttribute(
+      "href",
+      expect.stringContaining("/oauth/microsoft/start"),
+    );
   });
 
   it("logs in and persists the session token, then shows the signed-in view", async () => {
@@ -515,6 +520,11 @@ describe("AuthPanel", () => {
       expect(discordLink).toHaveAttribute(
         "href",
         expect.stringContaining("/oauth/discord/start?linkToken=session-token"),
+      );
+      const microsoftLink = screen.getByRole("link", { name: "Connect Microsoft" });
+      expect(microsoftLink).toHaveAttribute(
+        "href",
+        expect.stringContaining("/oauth/microsoft/start?linkToken=session-token"),
       );
     });
   });

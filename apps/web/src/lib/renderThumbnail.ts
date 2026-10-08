@@ -1,4 +1,4 @@
-import { commandsToPathData, type VectorDocument } from "@maker/core-vector";
+import { commandsToPathData, type VectorDocument } from "@richardmcquiston01/core-vector";
 
 export const THUMBNAIL_WIDTH = 320;
 export const THUMBNAIL_HEIGHT = 240;

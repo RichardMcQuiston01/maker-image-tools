@@ -1,4 +1,4 @@
-import type { LayerMode, LayerSettings, VectorDocument } from "@maker/core-vector";
+import type { LayerMode, LayerSettings, VectorDocument } from "@richardmcquiston01/core-vector";
 
 interface LayerPanelProps {
   document: VectorDocument;

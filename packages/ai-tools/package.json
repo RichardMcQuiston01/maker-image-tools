@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@maker/core-image": "workspace:*",
+    "@richardmcquiston01/core-image": "workspace:*",
     "@tensorflow/tfjs": "4.11.0",
     "@upscalerjs/esrgan-slim": "1.0.0",
     "onnxruntime-web": "1.27.0",

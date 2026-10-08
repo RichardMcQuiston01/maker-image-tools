@@ -9,15 +9,15 @@ export interface PlanQuota {
 const MB = 1024 * 1024;
 
 /**
- * The only two tiers `@maker/billing` currently sells (see its `plans.ts`) -
- * `free` is the default `@maker/accounts` assigns every new user, and is
- * also the fallback below for any plan tier this map doesn't recognize
- * (never trust an unrecognized tier as unlimited or as a paid tier's
- * quota).
+ * Every tier `@maker/billing` currently sells (see its `plans.ts`), plus
+ * `free` - the default `@maker/accounts` assigns every new user, and also
+ * the fallback below for any plan tier this map doesn't recognize (never
+ * trust an unrecognized tier as unlimited or as a paid tier's quota).
  */
 const QUOTAS: Record<string, PlanQuota> = {
   free: { maxProjects: 10, maxTotalBytes: 5 * MB },
   pro: { maxProjects: 200, maxTotalBytes: 250 * MB },
+  studio: { maxProjects: 1000, maxTotalBytes: 1024 * MB },
 };
 
 export function quotaForPlanTier(planTier: string): PlanQuota {

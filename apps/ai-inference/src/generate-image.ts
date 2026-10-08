@@ -1,5 +1,5 @@
 import "./image-data-polyfill.js";
-import { resize } from "@maker/core-image";
+import { resize } from "@richardmcquiston01/core-image";
 import { PNG } from "pngjs";
 import { callGemini, firstInlineImagePart } from "./gemini-client.js";
 

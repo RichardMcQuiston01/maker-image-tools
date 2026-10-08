@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { VectorDocument } from "@maker/core-vector";
+import type { VectorDocument } from "@richardmcquiston01/core-vector";
 import { useAuth } from "../hooks/useAuth";
 import { COMMUNITY_LIBRARY_URL } from "../lib/communityLibraryUrl";
 
@@ -97,6 +97,17 @@ export function CommunityLibraryPanel({
         }
         const body = (await response.json()) as { listing: { data: VectorDocument } };
         onLoadDocument(body.listing.data);
+        // Best-effort: records that this user has actually used the design, which
+        // `POST /listings/:id/ratings` now requires before accepting a rating from them (see
+        // "Rating abuse handling" in that service's README). Never blocks the load itself - a
+        // failure here just means a later rating attempt gets a "load this first" error instead.
+        if (user) {
+          void fetch(`${COMMUNITY_LIBRARY_URL}/listings/${id}/imports`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user.id }),
+          }).catch(() => {});
+        }
       } catch (err) {
         setError(
           err instanceof Error
@@ -107,7 +118,7 @@ export function CommunityLibraryPanel({
         setBusy(false);
       }
     },
-    [onLoadDocument],
+    [onLoadDocument, user],
   );
 
   const fetchRatings = useCallback(async (id: string) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyHomography, computeHomography, type PointCorrespondence } from "../src/homography.js";
-import type { Point } from "@maker/core-vector";
+import type { Point } from "@richardmcquiston01/core-vector";
 
 // Known simple transform: target = 2*source + (10, 5). This is affine, and
 // every affine transform is realizable as a homography.
