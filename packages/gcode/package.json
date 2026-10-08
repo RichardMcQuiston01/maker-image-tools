@@ -1,8 +1,22 @@
 {
   "name": "@richardmcquiston01/gcode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "G-code generation and parsing for laser/CNC/maker machines",
+  "keywords": [
+    "gcode",
+    "g-code",
+    "laser",
+    "cnc",
+    "engraving",
+    "grbl",
+    "maker",
+    "typescript"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/RichardMcQuiston01/maker-image-tools#readme",
+  "bugs": {
+    "url": "https://github.com/RichardMcQuiston01/maker-image-tools/issues"
+  },
   "type": "module",
   "repository": {
     "type": "git",
