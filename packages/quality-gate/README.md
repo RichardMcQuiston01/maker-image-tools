@@ -1,4 +1,4 @@
-# @richardmcquiston01/quality-gate
+# @maker/quality-gate
 
 `ROADMAP.md` §5b says every Stage 5b AI track "needs an explicit quality gate — compare output
 against ImagR / Vectorizer.AI / WeSculpt sample outputs before merging — since 'AI feature
@@ -30,7 +30,7 @@ key, so they run in CI exactly like every other test in this repo.
 **Not gated here, and why**:
 
 - **5B-1 material auto-detection, 5B-3 image generation, 5B-4 AI-assisted vectorization** (all in
-  `@richardmcquiston01/ai-inference`) call the paid Gemini API. There's no way to exercise the real model in
+  `@maker/ai-inference`) call the paid Gemini API. There's no way to exercise the real model in
   this sandbox (no `GEMINI_API_KEY`, no network egress to Google's API), so there's nothing to
   score. See "Manual eval rubric" below for how to gate these once you have both.
 - **5B-2 depth-map generation** runs a real local model (`MiDaS` small, no network needed) — but
@@ -47,7 +47,7 @@ key, so they run in CI exactly like every other test in this repo.
 The obvious first instinct for an upscale quality gate is PSNR (or SSIM) against the true
 higher-resolution source. Calibrating that against this repo's own vendored ESRGAN-slim model
 showed it _loses_ to naive bilinear upsampling on PSNR, consistently, across several synthetic
-detail patterns — which sounds like a red flag but isn't: `@richardmcquiston01/ai-tools`'s upscaler is a
+detail patterns — which sounds like a red flag but isn't: `@maker/ai-tools`'s upscaler is a
 GAN-based super-resolution model, and GAN-based super-resolution is well known to trade
 pixel-accuracy for perceptually sharper, more plausible-looking detail (that's the entire point of
 the "generative adversarial" part — it's rewarded for detail a discriminator finds convincing, not
@@ -58,7 +58,7 @@ gate's threshold is set well below that with a wide safety margin.
 
 ## Manual eval rubric (Gemini-backed tracks)
 
-For 5B-1/5B-3/5B-4, run `@richardmcquiston01/ai-inference` locally with a real `GEMINI_API_KEY` (see its
+For 5B-1/5B-3/5B-4, run `@maker/ai-inference` locally with a real `GEMINI_API_KEY` (see its
 README) against a handful of your own representative inputs, and judge each output against these
 questions rather than an automated pass/fail:
 
