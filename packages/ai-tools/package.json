@@ -1,6 +1,6 @@
 {
   "name": "@richardmcquiston01/ai-tools",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "In-browser AI image tools (background removal, upscaling, auto-crop) for laser/CNC/maker workflows",
   "keywords": [
     "background-removal",
