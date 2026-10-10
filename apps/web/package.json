@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@maker/ai-inference": "workspace:*",
-    "@maker/ai-tools": "workspace:*",
+    "@richardmcquiston01/ai-tools": "workspace:*",
     "@richardmcquiston01/core-image": "workspace:*",
     "@richardmcquiston01/core-vector": "workspace:*",
     "@richardmcquiston01/gcode": "workspace:*",

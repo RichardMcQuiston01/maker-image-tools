@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { crop } from "@richardmcquiston01/core-image";
-import type { BackgroundRemovalModel } from "@maker/ai-tools";
+import type { BackgroundRemovalModel } from "@richardmcquiston01/ai-tools";
 
 interface AutoCropPanelProps {
   image: ImageData | null;
@@ -19,12 +19,12 @@ export function AutoCropPanel({ image, onProcessed }: AutoCropPanelProps) {
     try {
       if (!modelRef.current) {
         setStatus("loading-model");
-        const { loadBackgroundRemovalModel } = await import("@maker/ai-tools");
+        const { loadBackgroundRemovalModel } = await import("@richardmcquiston01/ai-tools");
         modelRef.current = loadBackgroundRemovalModel(MODEL_URL);
       }
       const model = await modelRef.current;
       setStatus("running");
-      const { computeCropRegion } = await import("@maker/ai-tools");
+      const { computeCropRegion } = await import("@richardmcquiston01/ai-tools");
       const mask = await model.computeSaliencyMask(image);
       const region = computeCropRegion(mask, { margin: 8 });
       const result = crop(image, {

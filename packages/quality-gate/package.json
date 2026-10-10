@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@maker/ai-tools": "workspace:*",
+    "@richardmcquiston01/ai-tools": "workspace:*",
     "@richardmcquiston01/core-image": "workspace:*"
   },
   "devDependencies": {

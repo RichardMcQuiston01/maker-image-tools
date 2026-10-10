@@ -108,10 +108,10 @@
       "version": "0.0.0",
       "dependencies": {
         "@maker/ai-inference": "workspace:*",
-        "@maker/ai-tools": "workspace:*",
         "@maker/generators": "workspace:*",
         "@maker/machine-control": "workspace:*",
         "@maker/material-library": "workspace:*",
+        "@richardmcquiston01/ai-tools": "workspace:*",
         "@richardmcquiston01/core-image": "workspace:*",
         "@richardmcquiston01/core-vector": "workspace:*",
         "@richardmcquiston01/gcode": "workspace:*",
@@ -135,8 +135,8 @@
       },
     },
     "packages/ai-tools": {
-      "name": "@maker/ai-tools",
-      "version": "0.0.0",
+      "name": "@richardmcquiston01/ai-tools",
+      "version": "0.1.1",
       "dependencies": {
         "@richardmcquiston01/core-image": "workspace:*",
         "@tensorflow/tfjs": "4.11.0",
@@ -222,7 +222,7 @@
       "name": "@maker/quality-gate",
       "version": "0.0.0",
       "dependencies": {
-        "@maker/ai-tools": "workspace:*",
+        "@richardmcquiston01/ai-tools": "workspace:*",
         "@richardmcquiston01/core-image": "workspace:*",
       },
       "devDependencies": {
@@ -418,8 +418,6 @@
 
     "@maker/ai-inference": ["@maker/ai-inference@workspace:apps/ai-inference"],
 
-    "@maker/ai-tools": ["@maker/ai-tools@workspace:packages/ai-tools"],
-
     "@maker/billing": ["@maker/billing@workspace:apps/billing"],
 
     "@maker/cloud-projects": ["@maker/cloud-projects@workspace:apps/cloud-projects"],
@@ -463,6 +461,8 @@
     "@protobufjs/pool": ["@protobufjs/pool@1.1.0", "", {}, "sha512-0kELaGSIDBKvcgS4zkjz1PeddatrjYcmMWOlAuAPwAeccUrPHdUqo/J6LiymHHEiJT5NrF1UVwxY14f+fy4WQw=="],
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.2", "", {}, "sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug=="],
+
+    "@richardmcquiston01/ai-tools": ["@richardmcquiston01/ai-tools@workspace:packages/ai-tools"],
 
     "@richardmcquiston01/core-image": ["@richardmcquiston01/core-image@workspace:packages/core-image"],
 

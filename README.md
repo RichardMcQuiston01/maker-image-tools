@@ -18,7 +18,7 @@ Collection of image tools for editing and processing images for use in Maker and
 - [`packages/core-vector`](./packages/core-vector/README.md) — vector geometry: tracing, SVG/DXF, boolean ops, nesting (published to npm as `@richardmcquiston01/core-vector`)
 - [`packages/gcode`](./packages/gcode/README.md) — G-code generation and parsing (published to npm as `@richardmcquiston01/gcode`)
 - [`packages/quality-gate`](./packages/quality-gate/README.md) — automated quality gate for the AI-assisted tools
-- [`packages/ai-tools`](./packages/ai-tools) — AI-assisted image tools: background removal, upscaling, auto-crop
+- [`packages/ai-tools`](./packages/ai-tools/README.md) — AI-assisted image tools: background removal, upscaling, auto-crop (published to npm as `@richardmcquiston01/ai-tools`)
 - [`packages/generators`](./packages/generators) — design generators: box joints, keychains, geodata
 - [`packages/machine-control`](./packages/machine-control) — GRBL machine control and camera homography
 - [`packages/material-library`](./packages/material-library) — material setting presets and lookup
