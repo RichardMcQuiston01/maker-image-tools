@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import type { BackgroundRemovalModel } from "@maker/ai-tools";
+import type { BackgroundRemovalModel } from "@richardmcquiston01/ai-tools";
 
 interface BackgroundRemovalPanelProps {
   image: ImageData | null;
@@ -18,7 +18,7 @@ export function BackgroundRemovalPanel({ image, onProcessed }: BackgroundRemoval
     try {
       if (!modelRef.current) {
         setStatus("loading-model");
-        const { loadBackgroundRemovalModel } = await import("@maker/ai-tools");
+        const { loadBackgroundRemovalModel } = await import("@richardmcquiston01/ai-tools");
         modelRef.current = loadBackgroundRemovalModel(MODEL_URL);
       }
       const model = await modelRef.current;

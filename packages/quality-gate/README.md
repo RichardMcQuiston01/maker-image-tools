@@ -47,7 +47,7 @@ key, so they run in CI exactly like every other test in this repo.
 The obvious first instinct for an upscale quality gate is PSNR (or SSIM) against the true
 higher-resolution source. Calibrating that against this repo's own vendored ESRGAN-slim model
 showed it _loses_ to naive bilinear upsampling on PSNR, consistently, across several synthetic
-detail patterns — which sounds like a red flag but isn't: `@maker/ai-tools`'s upscaler is a
+detail patterns — which sounds like a red flag but isn't: `@richardmcquiston01/ai-tools`'s upscaler is a
 GAN-based super-resolution model, and GAN-based super-resolution is well known to trade
 pixel-accuracy for perceptually sharper, more plausible-looking detail (that's the entire point of
 the "generative adversarial" part — it's rewarded for detail a discriminator finds convincing, not

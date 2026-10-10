@@ -45,7 +45,7 @@ export function bboxIoU(a: BBox, b: BBox): number {
  * detail present, lower = smoother/blurrier).
  *
  * This is what the upscale quality gate scores instead of pixel-accuracy
- * metrics like PSNR/SSIM: `@maker/ai-tools`'s upscaler is a GAN-based
+ * metrics like PSNR/SSIM: `@richardmcquiston01/ai-tools`'s upscaler is a GAN-based
  * (ESRGAN) super-resolution model, and those are trained to hallucinate
  * plausible-looking fine detail rather than to minimize per-pixel error
  * against the true source — calibration against this repo's own vendored

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { computeCropRegion, loadBackgroundRemovalModel } from "@maker/ai-tools";
+import { computeCropRegion, loadBackgroundRemovalModel } from "@richardmcquiston01/ai-tools";
 import { bboxIoU, createCircleFixture, maskIoU } from "../src/index.js";
 
 // Same vendored u2netp model packages/ai-tools's own tests run real

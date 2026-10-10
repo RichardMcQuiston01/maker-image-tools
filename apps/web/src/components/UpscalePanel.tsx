@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import type { UpscaleFactor, UpscaleModel } from "@maker/ai-tools";
+import type { UpscaleFactor, UpscaleModel } from "@richardmcquiston01/ai-tools";
 
 interface UpscalePanelProps {
   image: ImageData | null;
@@ -24,7 +24,7 @@ export function UpscalePanel({ image, onProcessed }: UpscalePanelProps) {
       let modelPromise = modelsRef.current.get(factor);
       if (!modelPromise) {
         setStatus("loading-model");
-        const { loadUpscaleModel } = await import("@maker/ai-tools");
+        const { loadUpscaleModel } = await import("@richardmcquiston01/ai-tools");
         modelPromise = loadUpscaleModel(factor, { modelUrl: modelUrlFor(factor) });
         modelsRef.current.set(factor, modelPromise);
       }

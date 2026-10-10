@@ -5,7 +5,7 @@
 - **Architecture**: U²-Net (small variant, "U2NETP"), from Qin et al., _"U^2-Net: Going
   Deeper with Nested U-Structure for Salient Object Detection"_, Pattern Recognition 2020.
 - **Source repository**: https://github.com/xuebinqin/U-2-Net
-- **License**: Apache License 2.0 (the u2net/u2netp checkpoints — NOT the separate
+- **License**: Apache License 2.0 — full text in `LICENSE-APACHE-2.0.txt` alongside this file (the u2net/u2netp checkpoints — NOT the separate
   `u2net_portrait` checkpoint, which carries a non-commercial restriction and is not
   used here).
 - **File obtained from**: the pre-exported ONNX release published by

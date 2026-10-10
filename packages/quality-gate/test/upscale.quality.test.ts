@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resize } from "@richardmcquiston01/core-image";
-import { loadUpscaleModel } from "@maker/ai-tools";
+import { loadUpscaleModel } from "@richardmcquiston01/ai-tools";
 import { createDetailFixture, sharpness } from "../src/index.js";
 
 /**
