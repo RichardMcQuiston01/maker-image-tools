@@ -20,7 +20,7 @@ jobs:
 
       - name: Verify tag matches package version
         run: |
-          for pkg in core-image core-vector gcode; do
+          for pkg in core-image core-vector gcode ai-tools; do
             version=$(node -p "require('./packages/$pkg/package.json').version")
             if [ "v$version" != "$GITHUB_REF_NAME" ]; then
               echo "Tag $GITHUB_REF_NAME does not match @richardmcquiston01/$pkg version $version" >&2
@@ -33,6 +33,7 @@ jobs:
           node scripts/publish-package.mjs packages/core-image
           node scripts/publish-package.mjs packages/core-vector
           node scripts/publish-package.mjs packages/gcode
+          node scripts/publish-package.mjs packages/ai-tools
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           BUN_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
