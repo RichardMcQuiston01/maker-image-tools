@@ -7,6 +7,7 @@ import {
   ditherJarvisJudiceNinke,
   ditherStucki,
   ditherSierra,
+  ditherTwoRowSierra,
   ditherBurkes,
   ditherBayer,
   ditherBlueNoise,
@@ -30,12 +31,14 @@ import {
   duotone,
   crossProcess,
 } from "./effects.js";
+import { outline, comic, stipple, colorLut } from "./stylize.js";
 
 export * from "./tone.js";
 export * from "./dither.js";
 export * from "./edge-morphology.js";
 export * from "./transform.js";
 export * from "./effects.js";
+export * from "./stylize.js";
 export * from "./testgrid.js";
 
 /**
@@ -91,6 +94,12 @@ export const BUILT_IN_FILTERS: readonly BuiltInFilterEntry[] = [
     label: "Dither: Sierra",
     group: "Dither",
     filter: ditherSierra as Filter<never>,
+  },
+  {
+    name: "dither-two-row-sierra",
+    label: "Dither: Two-Row Sierra",
+    group: "Dither",
+    filter: ditherTwoRowSierra as Filter<never>,
   },
   {
     name: "dither-burkes",
@@ -169,6 +178,10 @@ export const BUILT_IN_FILTERS: readonly BuiltInFilterEntry[] = [
     group: "Effects",
     filter: crossProcess as Filter<never>,
   },
+  { name: "outline", label: "Outline", group: "Effects", filter: outline as Filter<never> },
+  { name: "comic", label: "Comic", group: "Effects", filter: comic as Filter<never> },
+  { name: "stipple", label: "Stipple", group: "Effects", filter: stipple as Filter<never> },
+  { name: "color-lut", label: "Color LUT", group: "Effects", filter: colorLut as Filter<never> },
   { name: "crop", label: "Crop (full image)", group: "Transform", filter: crop as Filter<never> },
   { name: "rotate", label: "Rotate 90°", group: "Transform", filter: rotate as Filter<never> },
   {
