@@ -17,6 +17,16 @@ const packageJsonPath = join(resolve(packageDir), "package.json");
 const originalContents = readFileSync(packageJsonPath, "utf8");
 const manifest = JSON.parse(originalContents);
 
+// Every export entry points at TypeScript source (e.g. "./src/provider.ts"); the published
+// package points the same subpath at its built output.
+const distExports = (entries) =>
+  Object.fromEntries(
+    Object.entries(entries).map(([subpath, source]) => {
+      const built = source.replace(/^\.\/src\//, "./dist/").replace(/\.ts$/, "");
+      return [subpath, { types: `${built}.d.ts`, default: `${built}.js` }];
+    }),
+  );
+
 const run = (command, args) =>
   execFileSync(command, args, { cwd: resolve(packageDir), stdio: "inherit" });
 
@@ -24,7 +34,7 @@ try {
   run("bun", ["run", "build"]);
   manifest.main = "./dist/index.js";
   manifest.types = "./dist/index.d.ts";
-  manifest.exports = { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } };
+  manifest.exports = distExports(manifest.exports);
   writeFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`);
   run("bun", ["publish", "--access", "public", ...flags]);
 } catch (error) {
