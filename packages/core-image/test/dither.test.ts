@@ -9,6 +9,7 @@ import {
   ditherJarvisJudiceNinke,
   ditherSierra,
   ditherStucki,
+  ditherTwoRowSierra,
 } from "../src/filters/dither.js";
 import type { Filter, FilterOptions } from "../src/types.js";
 
@@ -18,6 +19,7 @@ const errorDiffusionFilters: Array<[string, Filter<FilterOptions>]> = [
   ["ditherJarvisJudiceNinke", ditherJarvisJudiceNinke],
   ["ditherStucki", ditherStucki],
   ["ditherSierra", ditherSierra],
+  ["ditherTwoRowSierra", ditherTwoRowSierra],
   ["ditherBurkes", ditherBurkes],
 ];
 

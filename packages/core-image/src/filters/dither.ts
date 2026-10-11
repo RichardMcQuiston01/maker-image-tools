@@ -193,6 +193,22 @@ export const ditherSierra: Filter<DitherOptions> = (image, options) => {
   return diffuseErrorDither(image, threshold, SIERRA_KERNEL);
 };
 
+const TWO_ROW_SIERRA_KERNEL = buildKernel(16, [
+  [1, 0, 4],
+  [2, 0, 3],
+  [-2, 1, 1],
+  [-1, 1, 2],
+  [0, 1, 3],
+  [1, 1, 2],
+  [2, 1, 1],
+]);
+
+/** Two-row Sierra error-diffusion dithering (Frankie Sierra): a lighter, faster variant of Sierra. */
+export const ditherTwoRowSierra: Filter<DitherOptions> = (image, options) => {
+  const threshold = options.threshold ?? DEFAULT_THRESHOLD;
+  return diffuseErrorDither(image, threshold, TWO_ROW_SIERRA_KERNEL);
+};
+
 const BURKES_KERNEL = buildKernel(32, [
   [1, 0, 8],
   [2, 0, 4],
