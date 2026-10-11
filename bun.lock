@@ -146,6 +146,7 @@
       },
       "devDependencies": {
         "@richardmcquiston01/ai-providers": "^0.1.0",
+        "esbuild": "^0.25.12",
         "jsdom": "^25.0.1",
         "typescript": "^5.7.3",
         "vitest": "^3.0.4",

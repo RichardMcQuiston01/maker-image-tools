@@ -30,7 +30,11 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./provider": "./src/provider.ts"
+    "./background-removal": "./src/background-removal.ts",
+    "./upscale": "./src/upscale.ts",
+    "./auto-crop": "./src/auto-crop.ts",
+    "./provider": "./src/provider.ts",
+    "./models/*": "./models/*"
   },
   "files": [
     "dist",
@@ -55,6 +59,7 @@
   },
   "devDependencies": {
     "@richardmcquiston01/ai-providers": "^0.1.0",
+    "esbuild": "^0.25.12",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.4"
@@ -66,5 +71,6 @@
     "@richardmcquiston01/ai-providers": {
       "optional": true
     }
-  }
+  },
+  "sideEffects": false
 }
