@@ -44,7 +44,6 @@ when the session is created), so `"webgpu"` is opt-in through
 `executionProviders`. If a run fails on WebGPU the model rebuilds its session
 on WebAssembly and retries that run once.
 
-
 ## Entry points
 
 TensorFlow.js and ONNX Runtime are large, and most apps need only one of them. Import from the entry point you need so a bundler never has to include the rest:
