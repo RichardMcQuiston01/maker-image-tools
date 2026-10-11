@@ -25,6 +25,7 @@ import {
 // Pass a URL, ArrayBuffer or Uint8Array of the bundled `models/u2netp.onnx`.
 const bg = await loadBackgroundRemovalModel("/models/u2netp.onnx", {
   wasmPaths: "/ort/", // where ort-wasm*.wasm is served from (bundlers like Vite need this)
+  // executionProviders: ["wasm"], // the default; see the note below before adding "webgpu"
 });
 const cutout: ImageData = await bg.removeBackground(image);
 
@@ -35,6 +36,13 @@ const region = computeCropRegion(mask, { threshold: 0.5, margin: 8 });
 const upscaler = await loadUpscaleModel(4);
 const bigger: ImageData = await upscaler.upscale(image);
 ```
+
+Background removal runs on WebAssembly by default. onnxruntime-web's WebGPU
+provider can't run U²-Net-P's MaxPool layers (it fails with "using ceil() in
+shape computation is not yet supported for MaxPool" when the model runs, not
+when the session is created), so `"webgpu"` is opt-in through
+`executionProviders`. If a run fails on WebGPU the model rebuilds its session
+on WebAssembly and retries that run once.
 
 ## Entry points
 
