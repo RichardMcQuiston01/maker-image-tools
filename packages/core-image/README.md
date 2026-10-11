@@ -1,6 +1,6 @@
 # @richardmcquiston01/core-image
 
-Image processing core for laser, CNC and other maker-machine workflows: a filter registry (dithering, tone, edge/morphology, transforms, test grids), image I/O helpers, and grayscale heightmap-to-STL conversion.
+Image processing core for laser, CNC and other maker-machine workflows: a filter registry (dithering, tone, edge/morphology, effects such as blur, sepia and duotone, transforms, test grids), image I/O helpers, and grayscale heightmap-to-STL conversion.
 
 Part of [maker-image-tools](https://github.com/RichardMcQuiston01/maker-image-tools).
 
