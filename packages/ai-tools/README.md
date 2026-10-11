@@ -36,6 +36,33 @@ const upscaler = await loadUpscaleModel(4);
 const bigger: ImageData = await upscaler.upscale(image);
 ```
 
+## Entry points
+
+TensorFlow.js and ONNX Runtime are large, and most apps need only one of them. Import from the entry point you need so a bundler never has to include the rest:
+
+| Import                                            | Brings                              | Heavy dependency            |
+| ------------------------------------------------- | ----------------------------------- | --------------------------- |
+| `@richardmcquiston01/ai-tools/background-removal` | `loadBackgroundRemovalModel`        | ONNX Runtime Web            |
+| `@richardmcquiston01/ai-tools/auto-crop`          | `computeCropRegion`                 | none                        |
+| `@richardmcquiston01/ai-tools/upscale`            | `loadUpscaleModel`                  | TensorFlow.js, the upscaler |
+| `@richardmcquiston01/ai-tools/provider`           | `OnnxBackgroundRemover` (see below) | none until the model loads  |
+| `@richardmcquiston01/ai-tools`                    | all of the above except `provider`  | everything                  |
+
+The main entry keeps working as before; the others are for apps that care about size. `computeCropRegion` is plain maths, so auto-crop's region helper never needs a model runtime (running the model for the saliency mask still does: that is `background-removal`).
+
+## The model file
+
+The U²-Net model is exported, so a bundler can emit it for you and you can drop any copy step. With Vite:
+
+```ts
+import modelUrl from "@richardmcquiston01/ai-tools/models/u2netp.onnx?url";
+import { loadBackgroundRemovalModel } from "@richardmcquiston01/ai-tools/background-removal";
+
+const model = await loadBackgroundRemovalModel(modelUrl);
+```
+
+In Node, `import.meta.resolve("@richardmcquiston01/ai-tools/models/u2netp.onnx")` gives its location. The licence and attribution files in `models/` are exported the same way.
+
 ## As an `ImageGenerator` (optional)
 
 `@richardmcquiston01/ai-tools/provider` wraps background removal as an `ImageGenerator` from [`@richardmcquiston01/ai-providers`](https://www.npmjs.com/package/@richardmcquiston01/ai-providers), so an app can offer it next to other providers (a local ComfyUI, a hosted API) and swap between them through one interface. `ai-providers` is an optional peer dependency: install it only if you use this entry point.
@@ -70,7 +97,7 @@ else console.error(result.error); // names the provider and what failed
 
 ## Model files and offline use
 
-- **Background removal:** the package ships `models/u2netp.onnx` (about 4.5 MB). Serve or import it yourself and pass it to `loadBackgroundRemovalModel`; nothing is fetched on your behalf.
+- **Background removal:** the package ships `models/u2netp.onnx` (about 4.5 MB) and exports it (see above). Serve or import it and pass it to `loadBackgroundRemovalModel`; nothing is fetched on your behalf.
 - **Upscaling:** by default the model definitions load their weights from a public CDN mirror of `@upscalerjs/esrgan-slim`. For a self-contained deployment, serve that package's `models/<scale>x/` directory and pass the resolved `model.json` URL as `modelUrl`.
 - **Size:** TensorFlow.js and ONNX Runtime are large. Load this package lazily (`await import(...)`) rather than in your main bundle.
 
