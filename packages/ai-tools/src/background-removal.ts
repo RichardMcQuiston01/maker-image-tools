@@ -20,7 +20,22 @@ export interface LoadBackgroundRemovalModelOptions {
    * copied. If omitted, onnxruntime-web's own default resolution is used.
    */
   wasmPaths?: string;
+  /**
+   * onnxruntime-web execution providers to try, in order. Defaults to
+   * `["wasm"]` (the CPU/WebAssembly backend), which runs this model correctly
+   * everywhere and takes well under a second at 320x320.
+   *
+   * `"webgpu"` is opt-in because U2NETP's MaxPool layers use ceil mode, which
+   * onnxruntime-web's WebGPU provider rejects when the model *runs* ("using
+   * ceil() in shape computation is not yet supported for MaxPool"), not when
+   * the session is created, so listing it first can't fall back by itself.
+   * If you do opt in and a run fails on WebGPU, the model rebuilds its session
+   * on WebAssembly and retries that run once.
+   */
+  executionProviders?: readonly ExecutionProvider[];
 }
+
+export type ExecutionProvider = "webgpu" | "wasm";
 
 export interface SaliencyMask {
   /** Row-major foreground-probability values in [0, 1], one per pixel of the source image. */
@@ -107,10 +122,6 @@ function upsampleMask(mask: Float32Array, width: number, height: number): Float3
   return result;
 }
 
-function supportsWebGpu(): boolean {
-  return typeof navigator !== "undefined" && "gpu" in navigator && navigator.gpu != null;
-}
-
 export async function loadBackgroundRemovalModel(
   model: string | ArrayBuffer | Uint8Array,
   options?: LoadBackgroundRemovalModelOptions,
@@ -119,14 +130,15 @@ export async function loadBackgroundRemovalModel(
     ort.env.wasm.wasmPaths = options.wasmPaths;
   }
 
-  const executionProviders = supportsWebGpu() ? ["webgpu", "wasm"] : ["wasm"];
-  const session =
-    typeof model === "string"
-      ? await ort.InferenceSession.create(model, { executionProviders })
-      : await ort.InferenceSession.create(
-          model instanceof Uint8Array ? model : new Uint8Array(model),
-          { executionProviders },
-        );
+  const source =
+    typeof model === "string" || model instanceof Uint8Array ? model : new Uint8Array(model);
+  const createSession = (executionProviders: readonly ExecutionProvider[]) =>
+    typeof source === "string"
+      ? ort.InferenceSession.create(source, { executionProviders: [...executionProviders] })
+      : ort.InferenceSession.create(source, { executionProviders: [...executionProviders] });
+
+  let providers: readonly ExecutionProvider[] = options?.executionProviders ?? ["wasm"];
+  let session = await createSession(providers);
   const rawInputName = session.inputNames[0];
   const rawOutputName = session.outputNames[0];
   if (!rawInputName || !rawOutputName) {
@@ -135,9 +147,21 @@ export async function loadBackgroundRemovalModel(
   const inputName: string = rawInputName;
   const outputName: string = rawOutputName;
 
+  /** Runs the model; a failure on WebGPU rebuilds the session on WebAssembly and retries once. */
+  async function runModel(feeds: Record<string, ort.Tensor>) {
+    try {
+      return await session.run(feeds);
+    } catch (cause) {
+      if (!providers.includes("webgpu")) throw cause;
+      providers = ["wasm"];
+      session = await createSession(providers);
+      return session.run(feeds);
+    }
+  }
+
   async function computeSaliencyMask(image: ImageData): Promise<SaliencyMask> {
     const tensor = preprocess(image);
-    const results = await session.run({ [inputName]: tensor });
+    const results = await runModel({ [inputName]: tensor });
     const output = results[outputName];
     if (!output) {
       throw new Error(`Background removal model did not produce output "${outputName}"`);
