@@ -1,6 +1,6 @@
 {
   "name": "@richardmcquiston01/core-image",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Image processing core (filters, heightmaps, pixel I/O) for laser/CNC/maker workflows",
   "keywords": [
     "image-processing",
