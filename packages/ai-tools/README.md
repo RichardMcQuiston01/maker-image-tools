@@ -36,6 +36,38 @@ const upscaler = await loadUpscaleModel(4);
 const bigger: ImageData = await upscaler.upscale(image);
 ```
 
+## As an `ImageGenerator` (optional)
+
+`@richardmcquiston01/ai-tools/provider` wraps background removal as an `ImageGenerator` from [`@richardmcquiston01/ai-providers`](https://www.npmjs.com/package/@richardmcquiston01/ai-providers), so an app can offer it next to other providers (a local ComfyUI, a hosted API) and swap between them through one interface. `ai-providers` is an optional peer dependency: install it only if you use this entry point.
+
+```ts
+import {
+  browserImageCodec,
+  lazyBackgroundRemovalModel,
+  OnnxBackgroundRemover,
+  REMOVE_BACKGROUND_MODE,
+} from "@richardmcquiston01/ai-tools/provider";
+
+const remover = new OnnxBackgroundRemover({
+  // ONNX Runtime is imported on first use, so listing the provider costs nothing.
+  loadModel: lazyBackgroundRemovalModel("/models/u2netp.onnx"),
+  // Providers exchange encoded images; the codec turns them into pixels and back.
+  codec: browserImageCodec,
+});
+
+const result = await remover.generateImage({
+  instructions: "",
+  prompt: "",
+  images: [{ mimeType: "image/png", data: pngBytes }],
+  mode: REMOVE_BACKGROUND_MODE,
+});
+if (result.ok)
+  use(result.value.image); // a PNG with a transparent background
+else console.error(result.error); // names the provider and what failed
+```
+
+`browserImageCodec` needs the DOM (canvas); pass your own `ImageCodec` elsewhere. The model is loaded once and shared between runs, and a failed load is retried on the next call.
+
 ## Model files and offline use
 
 - **Background removal:** the package ships `models/u2netp.onnx` (about 4.5 MB). Serve or import it yourself and pass it to `loadBackgroundRemovalModel`; nothing is fetched on your behalf.
