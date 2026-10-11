@@ -17,11 +17,13 @@ const packageJsonPath = join(resolve(packageDir), "package.json");
 const originalContents = readFileSync(packageJsonPath, "utf8");
 const manifest = JSON.parse(originalContents);
 
-// Every export entry points at TypeScript source (e.g. "./src/provider.ts"); the published
-// package points the same subpath at its built output.
+// Export entries that point at TypeScript source (e.g. "./src/provider.ts") are published
+// pointing the same subpath at its built output.
+// Entries that point anywhere else (e.g. "./models/*", shipped as-is) are left untouched.
 const distExports = (entries) =>
   Object.fromEntries(
     Object.entries(entries).map(([subpath, source]) => {
+      if (!source.startsWith("./src/")) return [subpath, source];
       const built = source.replace(/^\.\/src\//, "./dist/").replace(/\.ts$/, "");
       return [subpath, { types: `${built}.d.ts`, default: `${built}.js` }];
     }),

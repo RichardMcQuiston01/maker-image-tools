@@ -1,6 +1,6 @@
 {
   "name": "@richardmcquiston01/ai-tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "In-browser AI image tools (background removal, upscaling, auto-crop) for laser/CNC/maker workflows",
   "keywords": [
     "background-removal",
@@ -30,7 +30,11 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./provider": "./src/provider.ts"
+    "./background-removal": "./src/background-removal.ts",
+    "./upscale": "./src/upscale.ts",
+    "./auto-crop": "./src/auto-crop.ts",
+    "./provider": "./src/provider.ts",
+    "./models/*": "./models/*"
   },
   "files": [
     "dist",
@@ -55,6 +59,7 @@
   },
   "devDependencies": {
     "@richardmcquiston01/ai-providers": "^0.1.0",
+    "esbuild": "^0.25.12",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.4"
@@ -66,5 +71,6 @@
     "@richardmcquiston01/ai-providers": {
       "optional": true
     }
-  }
+  },
+  "sideEffects": false
 }
