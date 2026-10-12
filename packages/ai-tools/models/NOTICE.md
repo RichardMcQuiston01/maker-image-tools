@@ -16,3 +16,20 @@
 
 Vendored directly into this package so background removal runs fully offline with
 no runtime dependency on any external CDN or model-hosting service.
+
+## `depth-anything-v2-small.onnx`
+
+- **Architecture**: Depth Anything V2, Small (ViT-S / DINOv2 encoder, DPT decoder), from Yang et al.,
+  _"Depth Anything V2"_, NeurIPS 2024.
+- **Source repository**: https://github.com/DepthAnything/Depth-Anything-V2
+- **License**: Apache License 2.0 — full text in `LICENSE-APACHE-2.0.txt` alongside this file. Only the
+  **Small** checkpoint is Apache-2.0; the Base, Large and Giant checkpoints carry a CC-BY-NC-4.0
+  (non-commercial) licence and are NOT used here.
+- **File obtained from**: the ONNX export published at
+  https://huggingface.co/onnx-community/depth-anything-v2-small (file `onnx/model_quantized.onnx`, the
+  int8-quantized build, 27,258,801 bytes), redistributed unmodified.
+  (SHA-256: `fcf51f1b230362b28690bb9d1809bf0431f29cad20534e3f589bd7285547f20d`).
+- **Interface**: input `pixel_values` `[1, 3, H, W]` (H and W multiples of 14, ImageNet mean/std);
+  output `predicted_depth` `[1, H, W]`, relative inverse depth (larger = nearer).
+
+Vendored directly into this package so depth estimation runs fully offline, like background removal.
