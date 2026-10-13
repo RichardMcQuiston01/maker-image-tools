@@ -1,6 +1,6 @@
 {
   "name": "@richardmcquiston01/core-vector",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Vector geometry core (paths, boolean ops, nesting, DXF, tracing) for laser/CNC/maker workflows",
   "keywords": [
     "vector",
