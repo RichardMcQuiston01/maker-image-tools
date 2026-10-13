@@ -1,6 +1,6 @@
 # @richardmcquiston01/ai-tools
 
-In-browser AI image tools for laser, CNC and other maker-machine workflows: background removal, upscaling and subject-aware auto-crop. Everything runs client-side — no API keys and no server.
+In-browser AI image tools for laser, CNC and other maker-machine workflows: background removal, upscaling, subject-aware auto-crop and monocular depth estimation. Everything runs client-side — no API keys and no server.
 
 Part of [maker-image-tools](https://github.com/RichardMcQuiston01/maker-image-tools). Built on [`@richardmcquiston01/core-image`](https://www.npmjs.com/package/@richardmcquiston01/core-image).
 
@@ -18,6 +18,7 @@ Requires an environment with `ImageData` (browser, or a polyfill in Node). ESM o
 import {
   computeCropRegion,
   loadBackgroundRemovalModel,
+  loadDepthModel,
   loadUpscaleModel,
 } from "@richardmcquiston01/ai-tools";
 
@@ -31,6 +32,12 @@ const cutout: ImageData = await bg.removeBackground(image);
 
 const mask = await bg.computeSaliencyMask(image);
 const region = computeCropRegion(mask, { threshold: 0.5, margin: 8 });
+
+// Monocular depth (Depth Anything V2 Small via onnxruntime-web).
+const depthModel = await loadDepthModel("/models/depth-anything-v2-small.onnx", {
+  wasmPaths: "/ort/",
+});
+const depth = await depthModel.estimateDepth(image); // depth.values: 0..1 per pixel, 1 = nearest
 
 // Upscaling (ESRGAN-slim via TensorFlow.js).
 const upscaler = await loadUpscaleModel(4);
@@ -52,15 +59,20 @@ TensorFlow.js and ONNX Runtime are large, and most apps need only one of them. I
 | ------------------------------------------------- | ----------------------------------- | --------------------------- |
 | `@richardmcquiston01/ai-tools/background-removal` | `loadBackgroundRemovalModel`        | ONNX Runtime Web            |
 | `@richardmcquiston01/ai-tools/auto-crop`          | `computeCropRegion`                 | none                        |
+| `@richardmcquiston01/ai-tools/depth`              | `loadDepthModel`                    | ONNX Runtime Web            |
 | `@richardmcquiston01/ai-tools/upscale`            | `loadUpscaleModel`                  | TensorFlow.js, the upscaler |
 | `@richardmcquiston01/ai-tools/provider`           | `OnnxBackgroundRemover` (see below) | none until the model loads  |
 | `@richardmcquiston01/ai-tools`                    | all of the above except `provider`  | everything                  |
 
 The main entry keeps working as before; the others are for apps that care about size. `computeCropRegion` is plain maths, so auto-crop's region helper never needs a model runtime (running the model for the saliency mask still does: that is `background-removal`).
 
-## The model file
+## Depth estimation
 
-The U²-Net model is exported, so a bundler can emit it for you and you can drop any copy step. With Vite:
+`loadDepthModel` runs Depth Anything V2 Small (Apache-2.0; the int8 build, about 27 MB, `models/depth-anything-v2-small.onnx`) and returns a `DepthMap`: one value in `[0, 1]` per pixel of the source image, `1` being the nearest point. The values are **relative**, not metric: they say what is in front of what, and they are stretched to fill 0..1 for every picture, so two pictures' depths are not comparable. The image is scaled so its longer side is `inputSize` pixels (default 518, the model's native size; any multiple of 14 works for each side, so proportions are kept), run on WebAssembly (about 3 s for a 2048 x 1362 photo in Node), then the result is resampled back to the source size. Transparency is ignored.
+
+## The model files
+
+The U²-Net model (`models/u2netp.onnx`) and the depth model (`models/depth-anything-v2-small.onnx`) are exported, so a bundler can emit it for you and you can drop any copy step. With Vite:
 
 ```ts
 import modelUrl from "@richardmcquiston01/ai-tools/models/u2netp.onnx?url";
@@ -106,9 +118,10 @@ else console.error(result.error); // names the provider and what failed
 ## Model files and offline use
 
 - **Background removal:** the package ships `models/u2netp.onnx` (about 4.5 MB) and exports it (see above). Serve or import it and pass it to `loadBackgroundRemovalModel`; nothing is fetched on your behalf.
+- **Depth estimation:** the package ships `models/depth-anything-v2-small.onnx` (about 27 MB) and exports it the same way; pass it to `loadDepthModel`.
 - **Upscaling:** by default the model definitions load their weights from a public CDN mirror of `@upscalerjs/esrgan-slim`. For a self-contained deployment, serve that package's `models/<scale>x/` directory and pass the resolved `model.json` URL as `modelUrl`.
 - **Size:** TensorFlow.js and ONNX Runtime are large. Load this package lazily (`await import(...)`) rather than in your main bundle.
 
 ## Licenses
 
-The code is MIT (see `LICENSE`). The bundled `models/u2netp.onnx` is the Apache-2.0 U²-Net-P checkpoint; its attribution is in `models/NOTICE.md` and the licence text is in `models/LICENSE-APACHE-2.0.txt`.
+The code is MIT (see `LICENSE`). The bundled `models/u2netp.onnx` is the Apache-2.0 U²-Net-P checkpoint and `models/depth-anything-v2-small.onnx` is the Apache-2.0 Depth Anything V2 Small checkpoint (the larger Depth Anything V2 checkpoints are non-commercial and are not used); its attribution is in `models/NOTICE.md` and the licence text is in `models/LICENSE-APACHE-2.0.txt`.

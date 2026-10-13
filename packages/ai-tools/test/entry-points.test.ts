@@ -65,6 +65,10 @@ describe("entry points keep their heavy dependencies apart", () => {
     expect(await heavyImports("src/background-removal.ts")).toEqual(["onnxruntime-web"]);
   });
 
+  it("depth needs only ONNX Runtime", async () => {
+    expect(await heavyImports("src/depth.ts")).toEqual(["onnxruntime-web"]);
+  });
+
   it("upscale needs only TensorFlow.js and the upscaler", async () => {
     expect(await heavyImports("src/upscale.ts")).toEqual([
       "@tensorflow/tfjs",
