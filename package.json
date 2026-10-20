@@ -1,10 +1,14 @@
 {
   "name": "maker-image-tools",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "Collection of image tools for editing and processing images for use in Maker and Crafting machines (Laser, CNC, Waterjet, vinyl cutter, etc.)",
   "license": "MIT",
+  "funding": {
+    "type": "individual",
+    "url": "https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800"
+  },
   "engines": {
     "node": ">=20",
     "bun": ">=1.1"

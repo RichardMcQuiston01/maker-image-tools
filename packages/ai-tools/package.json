@@ -1,6 +1,6 @@
 {
   "name": "@richardmcquiston01/ai-tools",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "In-browser AI image tools (background removal, upscaling, auto-crop, depth estimation) for laser/CNC/maker workflows",
   "keywords": [
     "background-removal",
@@ -17,6 +17,10 @@
     "image-generator"
   ],
   "license": "MIT",
+  "funding": {
+    "type": "individual",
+    "url": "https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800"
+  },
   "homepage": "https://github.com/RichardMcQuiston01/maker-image-tools#readme",
   "bugs": {
     "url": "https://github.com/RichardMcQuiston01/maker-image-tools/issues"
