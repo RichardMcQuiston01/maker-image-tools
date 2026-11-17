@@ -3,6 +3,8 @@
 - Author: [Richard McQuiston](mailto:richard.mcquiston@gmail.com)
 - Website: https://richardmcquiston.com/
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P1V529Z7ZP)
+
 ## Table of Contents
 
 | [Overview](#overview) | [Features](#features) | [Getting Started](#getting-started) | [Project Layout](#project-layout) | [More Information](#more-information) | [Buy Me a Coffee](#buy-me-a-coffee) | [License](#license) | [Copyright](#copyright) |
